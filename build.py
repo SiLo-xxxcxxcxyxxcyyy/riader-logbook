@@ -8,7 +8,9 @@ Sources (downloaded once into a cache, re-fetched with --refresh):
     This is the most up-to-date source and covers Frozen Trail (Pendola Pass).
   * ARC Raiders Wiki (arcraiders.wiki, CC BY-SA 4.0): quest chains, quest maps,
     the 2.0 skill list and the Pendola Pass map.
-  * Arc Raiders Hub skill guide (arcraidershub.com): recommended build order per playstyle.
+  * MetaForge map markers: containers, nature spawns, caches, key rooms, extracts and quest spots.
+  * Arc Raiders Hub (arcraidershub.com): build orders in sources/skill_builds.json and guide links in
+    sources/hub_guides.json, both maintained by hand (the site does not allow scraping).
 
 Usage:  python3 build.py /path/to/arcraiders-data [--refresh] [--offline]
 """
@@ -305,54 +307,57 @@ def parse_skills(t):
     return out
 
 
-# ---------------------------------------------------------------- 4. Skill builds (Arc Raiders Hub guide)
-print("Skill guide …")
-GUIDE_URL = "https://arcraidershub.com/guides/recommended-skill-tree-guide"
-guide_html = cached("hub_skill_guide.json", lambda: http(GUIDE_URL))
-
-
-def guide_text(h):
-    t = re.sub(r"<script.*?</script>|<style.*?</style>|<nav.*?</nav>|<footer.*?</footer>", "", h, flags=re.S)
-    t = re.sub(r"<(h[1-4]|li|p|tr|br)[^>]*>", "\n", t)
-    t = html.unescape(re.sub(r"<[^>]+>", " ", t))
-    return [ln.strip() for ln in re.sub(r"[ \t]+", " ", t).split("\n") if ln.strip()]
-
-
+# ---------------------------------------------------------------- 4. Skill builds (hand-maintained file)
+# Arc Raiders Hub's terms forbid automated scraping, so the build orders live in sources/skill_builds.json
+# and are updated by hand from https://arcraidershub.com/guides/recommended-skill-tree-guide
 skill_rows = parse_skills(skills_wt) if skills_wt else []
-skill_key = {norm(s["n"]): s for s in skill_rows}
-builds = []
-if guide_html:
-    cur = phase = None
-    for ln in guide_text(guide_html):
-        m = re.match(r"^(PvE|PvP solo|PvP squad|PvPvE): (.+)$", ln)
-        if m:
-            cur = {"id": norm(m.group(1)), "n": m.group(1), "sub": m.group(2), "phases": []}
-            builds.append(cur); phase = None; continue
-        if cur is None:
-            continue
-        if ln.startswith("PvE mode test") or ln.startswith("What the testing showed"):
-            cur = None; continue
-        m = re.match(r"^Capstones (.+)$", ln)
-        if m: cur["cap"] = m.group(1); continue
-        m = re.match(r"^(76|91) points C (\d+) · M (\d+) · S (\d+)$", ln)
-        if m: cur["split" + m.group(1)] = [int(m.group(2)), int(m.group(3)), int(m.group(4))]; continue
-        m = re.match(r"^Phase (\d+): (.+?) \(Points (\d+)[–-](\d+)\)$", ln)
-        if m:
-            phase = {"n": m.group(2), "from": int(m.group(3)), "to": int(m.group(4)), "steps": []}
-            cur["phases"].append(phase); continue
-        m = re.match(r"^(.+?) \((\d+)/(\d+)\|?(?:choice node|capstone)?\)?\s*-", ln) or \
-            re.match(r"^(.+?) \((\d+)/(\d+)\)", ln)
-        if phase is not None and m and norm(m.group(1)) in skill_key:
-            phase["steps"].append([skill_key[norm(m.group(1))]["n"], int(m.group(2))])
-            sk = skill_key[norm(m.group(1))]
-            if not sk["max"].isdigit() and not sk["max"].startswith("Option"):
-                sk["max"] = m.group(3)
-            continue
-        m = re.match(r"^(.+?) \((choice node|capstone)\)", ln)
-        if phase is not None and m and norm(m.group(1)) in skill_key:
-            phase["steps"].append([skill_key[norm(m.group(1))]["n"], 1])
-    builds = [b for b in builds if b["phases"]]
+builds = json.load(open(os.path.join(HERE, "sources", "skill_builds.json"), encoding="utf-8"))["builds"]
+seen_max = {}
+for bd in builds:
+    for ph in bd["phases"]:
+        for n, to in ph["steps"]:
+            seen_max[norm(n)] = max(seen_max.get(norm(n), 0), to)
+for sr in skill_rows:
+    if not sr["max"].isdigit() and not sr["max"].startswith("Option") and norm(sr["n"]) in seen_max:
+        sr["max"] = str(seen_max[norm(sr["n"])])
 print(f"  skills: {len(skill_rows)}, builds: {len(builds)} ({', '.join(b['n'] for b in builds)})")
+guides = json.load(open(os.path.join(HERE, "sources", "hub_guides.json"), encoding="utf-8"))["guides"]
+
+# ---------------------------------------------------------------- 5. MetaForge map markers + event schedule
+MF_MAPS = {"dam": "dam_battlegrounds", "spaceport": "the_spaceport", "buried-city": "buried_city",
+           "blue-gate": "the_blue_gate", "stella-montis": "stella_montis", "riven-tides": "riven_tides",
+           "pendola-pass": "pendola_pass"}
+print("Map markers …")
+markers = {}
+for mf_map, mid in MF_MAPS.items():
+    raw = cached(f"metaforge_markers_{mf_map}.json", lambda m=mf_map: json.loads(http(
+        f"https://metaforge.app/api/game-map-data?tableID=arc_map_data&mapID={m}"))["allData"])
+    if not raw:
+        continue
+    subs, areas, pts = [], [], []
+    for a in raw:
+        cat, sub = a.get("category"), (a.get("subcategory") or "").strip()
+        if cat not in ("containers", "nature", "arc", "events", "locations", "quests") or sub in ("player_spawn",):
+            continue
+        key = f"{cat}:{sub}"
+        if key not in subs:
+            subs.append(key)
+        la = (a.get("lootAreas") or "").strip()
+        if la and la not in areas:
+            areas.append(la)
+        label = (a.get("instanceName") or "").strip()
+        if cat not in ("locations", "quests"):
+            label = ""
+        z = a.get("zlayers")
+        pts.append([round(a["lng"]), round(a["lat"]), subs.index(key), areas.index(la) if la else -1,
+                    label, 1 if a.get("behindLockedDoor") else 0, z if z in (1, 2) else 0])
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    markers[mid] = {"box": [min(xs), min(ys), max(xs), max(ys)], "subs": subs, "areas": areas, "pts": pts}
+print(f"  markers: {sum(len(m['pts']) for m in markers.values())} on {len(markers)} maps")
+events = cached("metaforge_events.json", lambda: json.loads(http(MF + "events-schedule"))["data"]) or []
+EVMAP = {"dam": "dam_battlegrounds", "spaceport": "the_spaceport", "buriedcity": "buried_city", "bluegate": "the_blue_gate",
+         "stellamontis": "stella_montis", "riventides": "riven_tides", "pendolapass": "pendola_pass"}
+events = [{"n": e["name"], "m": EVMAP.get(norm(e["map"]), e["map"]), "s": e["startTime"], "e": e["endTime"]} for e in events]
 
 skills = []
 for s in skill_rows:
@@ -394,13 +399,14 @@ if pendola_png:
 # ---------------------------------------------------------------- write the page
 meta = {"built": dt.date.today().isoformat(),
         "sources": [
-            {"n": "MetaForge", "u": "https://metaforge.app/arc-raiders", "what": "items, quests, workshop, farming tips"},
+            {"n": "MetaForge", "u": "https://metaforge.app/arc-raiders", "what": "items, quests, workshop, farming tips, map markers, event schedule"},
             {"n": "ARC Raiders Wiki", "u": "https://arcraiders.wiki", "what": "quest chains, skill list, Pendola Pass map (CC BY-SA 4.0)"},
-            {"n": "Arc Raiders Hub", "u": GUIDE_URL, "what": "skill build order"},
+            {"n": "Arc Raiders Hub", "u": "https://arcraidershub.com/guides", "what": "skill build order (copied by hand) and guide links"},
             {"n": "RaidTheory arcraiders-data", "u": "https://github.com/RaidTheory/arcraiders-data", "what": "recipes, recycling, ARC drops, trades, projects, maps (MIT)"},
         ]}
 data = {"items": items, "quests": quests, "hideout": hideout, "projects": projects, "bots": bots,
-        "trades": trades, "maps": maps, "skills": skills, "builds": builds, "meta": meta}
+        "trades": trades, "maps": maps, "skills": skills, "builds": builds, "meta": meta,
+        "markers": markers, "events": events, "guides": guides}
 tpl = open(os.path.join(HERE, "web", "app.html"), encoding="utf-8").read()
 out = tpl.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False, separators=(",", ":"))) \
          .replace("/*__MAPS__*/null", json.dumps(mapimg))

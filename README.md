@@ -3,7 +3,8 @@
 A helper for ARC Raiders. It tells you what to sell from your vault, which map to drop on for your quests, and where to find the items you're missing. It runs in a browser or as an always-on-top desktop overlay that can read your quest log and vault from the screen.
 
 ## Features
-- **Lobby** ranks maps by how many of your available quests they have (plus a bonus for ARC drops you're missing), lists each quest's objectives, and lets you circle spots on the map.
+- **Lobby** shows running and upcoming map events, and a tactical map drawn from MetaForge's community markers: your quest spots are circled automatically, with extracts, hatches, key rooms, caches, ARC and nature spawns as layers. It also suggests a **loot route**: the densest clusters of spawn spots for what you need (your shopping list, a nature item, caches, probes, security lockers or a loot type), ordered by distance and ending at the nearest extract.
+- The Lobby also ranks maps by how many of your available quests they have (plus a bonus for ARC drops you're missing), lists each quest's objectives, and lets you circle spots on the map.
 - **Vault** gives every item a verdict (Keep, Sell, Recycle, Learn, Gear, Material) with the reason.
 - **Quests** tracks your progress through the quest chain.
 - **Shopping list** totals what you still need for quests, workshop upgrades and projects, minus what you own.
@@ -58,7 +59,8 @@ After `python build.py ...`, open `dist/index.html`. Progress is stored in the b
 | --- | --- |
 | [MetaForge](https://metaforge.app/arc-raiders) API | Current items, quests, workshop levels, farming tips (covers Frozen Trail / Pendola Pass) |
 | [ARC Raiders Wiki](https://arcraiders.wiki) (CC BY-SA 4.0) | Quest chains and maps, 2.0 skill list, Pendola Pass map |
-| [Arc Raiders Hub skill guide](https://arcraidershub.com/guides/recommended-skill-tree-guide) | Build order per playstyle |
+| [MetaForge](https://metaforge.app/arc-raiders) map data + events | ~43,000 map markers (containers, nature, caches, quest spots, extracts), event schedule |
+| [Arc Raiders Hub](https://arcraidershub.com/guides) | Build orders (`sources/skill_builds.json`) and guide links (`sources/hub_guides.json`), both kept by hand because the site's terms forbid scraping |
 | [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) (MIT) | Recipes, recycling, ARC drops, trades, projects, map images, scanner icons |
 
 The RaidTheory repo stopped updating in August 2026, so recipes, recycling and ARC drops for Frozen Trail items (and the new Bully, Skulker and Hydra) are missing until a source publishes them.

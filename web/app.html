@@ -196,9 +196,10 @@ function verdict(id,count){
   if(count===0)return{...base,k:n?"recycle":"mat",label:n?"Wanted":"None",why:n?`You need ${n}, you have none`:"Not in your vault"};
   if(extra<=0)return{...base,k:"keep",label:"Keep",why:count<n?`Keep all, you still need ${n-count} more`:"You need all of them"};
   const pre=keep>0?`Keep ${keep}, then `:"";
+  if(S.use&&S.use[id])return{...base,k:"keep",label:"Keep",why:keep>0?`Keep: needed for ${keep} and you use it`:"You use it in your loadout"};
   if(it.t==="Blueprint")return{...base,k:"learn",label:"Learn",why:pre+"learn the blueprint first, sell duplicates"};
   if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+"use it in a raid or sell it"};
-  if(GEAR.has(it.t))return{...base,k:"gear",label:"Gear",why:pre+"raid gear, your call"};
+  if(GEAR.has(it.t)||/weapon/i.test(it.t||""))return{...base,k:"gear",label:"Gear",why:pre+"sell it unless it's in your loadout (mark it in the item)"};
   const rc=Object.keys(it.rc||{}).filter(m=>deficit(m)>0);
   if(rc.length)return{...base,k:"recycle",label:"Recycle",why:pre+"recycle it for "+rc.map(m=>`${it.rc[m]}× ${nm(m)}`).join(", "),rc};
   if(MATS.has(it.t)&&RECIPE_USE[id])return{...base,k:"mat",label:"Material",why:pre+`used in ${plural(RECIPE_USE[id].length,"recipe")}, keep a sensible stock`};
@@ -226,6 +227,8 @@ function openItem(id){
   let h=`<div class="row"><span class="pill v-${v.k}">${v.label}</span><span class="mut">${esc(v.why)}</span></div>
   <div class="row"><label for="dlgQty" class="mut">In my vault</label><input type="number" min="0" id="dlgQty" value="${have(id)}"><span class="mono mut">· value ${fmt(it.v||0)} · stack ${it.st??"–"} · ${it.w??"–"} kg</span></div>`;
   h+=sec(`Needed in total: ${needTotal(id)}`,needs.length?`<ul class="plain">${needs.map(n=>`<li><span class="mono">${n.q}×</span> ${esc(n.src)} ${n.kind==="qa"||n.kind==="ha"?'<span class="chip map">now</span>':''}</li>`).join("")}</ul>`:"");
+  if(GEAR.has(it.t)||/weapon/i.test(it.t||""))h+=`<label class="row"><input type="checkbox" data-use="${esc(id)}" ${S.use&&S.use[id]?"checked":""}> I use this in my loadout (always keep it)</label>`;
+  const gl=(D.guides||[]).filter(g=>g.items.includes(id));
   const where=[];
   if(s.zones.length)where.push(`<li>Loot it in <b>${esc(s.zones.join(", "))}</b> zones (marked by loot icons on the map).</li>`);
   s.bots.forEach(b=>where.push(`<li>Dropped by ARC <b>${esc(b.n)}</b> on ${b.maps.map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(" ")}</li>`));
@@ -233,9 +236,13 @@ function openItem(id){
   s.trades.forEach(t=>where.push(`<li>Trade with <b>${esc(t.tr)}</b>: ${t.c.quantity}× ${itemBtn(t.c.itemId)} → ${t.q}×</li>`));
   s.quests.forEach(q=>where.push(`<li>Reward from quest <b>${esc(q.n)}</b> (${q.q}×)</li>`));
   if(it.t==="Blueprint")where.push(`<li class="note">The data has no fixed spawn locations for blueprints. They drop at random from containers, more often in high-value areas, during map events (Night Raid, Hurricane and similar) and from bigger ARC.</li>`);
+  const natSub=Object.keys(NATURE_ITEM).find(k=>NATURE_ITEM[k]===id);
+  if(natSub){const per=Object.entries(MK).map(([m,mk])=>{const si=mk.subs.indexOf("nature:"+natSub);return[m,si<0?0:mk.pts.filter(p=>p[2]===si).length]}).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]);
+    if(per.length)where.unshift(`<li>Spawn spots: ${per.map(([m,n])=>`<button class="itemlink" data-showmap="${m}" data-route="nat:${natSub}">${esc(MAPN[m]||m)} ${n}</button>`).join(" · ")} <span class="mut">(open one to see the route)</span></li>`)}
   h+=sec("Where to get it",where.length?`<ul class="plain">${where.join("")}</ul>`:`<p class="mut">The data lists no specific source.</p>`);
   if(it.tip)h+=sec("Farming tips · MetaForge",`<div style="white-space:pre-line">${esc(it.tip)}</div>${it.gu?`<a href="${esc(it.gu)}" target="_blank" rel="noopener" class="mut" style="font-size:13px">Full guide on MetaForge</a>`:""}`);
   if(s.from.length)h+=sec("Get it by recycling or salvaging",`<ul class="plain">${s.from.map(x=>`<li>${thumb(x.id)} ${itemBtn(x.id)} <span class="mono mut">${x.rc?`recycle ${x.rc}×`:""}${x.rc&&x.sv?" · ":""}${x.sv?`salvage ${x.sv}×`:""}</span>${have(x.id)?` <span class="chip map">you have ${have(x.id)}</span>`:""}${I(x.id).f?` <span class="mut">· ${esc(I(x.id).f)}</span>`:""}</li>`).join("")}</ul>`);
+  if(gl.length)h+=sec("Guides",gl.map(g=>`<a href="${esc(g.u)}" target="_blank" rel="noopener">${esc(g.t)}</a> <span class="mut">· Arc Raiders Hub</span>`).join("<br>"));
   if(it.rc)h+=sec("Recycles into",Object.entries(it.rc).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
   if(it.rp)h+=sec("Recipe",Object.entries(it.rp).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
   if(RECIPE_USE[id])h+=sec(`Used in ${plural(RECIPE_USE[id].length,"recipe")}`,RECIPE_USE[id].slice(0,24).map(k=>itemBtn(k)).join(", "));
@@ -269,7 +276,8 @@ V.lobby=()=>{
   return `<div class="stack" style="gap:20px">
   <div class="stack" style="gap:4px"><div class="eyebrow">Before the raid</div><h1>${sel.qs.length?`${plural(sel.qs.length,"quest")} on ${esc(MAPN[sel.m])}`:"Where to drop"}</h1>
   <p class="mut" style="margin:0;max-width:65ch">Maps are ranked by how many of your available quests they have. Maps where ARC drop items you're missing get a bonus.${anyQ.length?` ${plural(anyQ.length,"quest")} can be done on any map.`:""}${Object.keys(S.done).length?"":` Start by setting your progress on the Quests tab, or scan your quest log.`}</p></div>
-  <div class="maprank">${ranking.map((r,i)=>`<button class="mapcard ${i===0&&r.score?"best":""}" data-map="${r.m}" aria-pressed="${r.m===sel.m}"><span class="n">${esc(MAPN[r.m])}</span><span class="big">${r.qs.length}</span><span class="mut" style="font-size:12px">quests · ${r.drops.length} missing drops</span></button>`).join("")}</div>
+  ${eventsStrip()}
+  <div class="maprank">${ranking.map((r,i)=>`<button class="mapcard ${i===0&&r.score?"best":""}" data-map="${r.m}" aria-pressed="${r.m===sel.m}"><span class="n">${esc(MAPN[r.m])}</span><span class="big">${r.qs.length}</span><span class="mut" style="font-size:12px">quests · ${r.drops.length} missing drops</span>${evNow(r.m).map(e=>`<span class="chip map" style="margin-top:4px;align-self:flex-start">${esc(e.n)}</span>`).join("")}</button>`).join("")}</div>
   <div class="grid2">
     <div class="panel stack">
       <h2>Quests on this map</h2>
@@ -277,14 +285,7 @@ V.lobby=()=>{
       ${anyQ.length?`<details><summary class="mut" style="cursor:pointer">Quests without a specific map (${anyQ.length})</summary><div class="stack" style="margin-top:10px">${anyQ.map(id=>questBlock(id,true)).join("")}</div></details>`:""}
       ${sel.drops.length?`<div class="stack" style="gap:6px"><div class="eyebrow">ARC drops on this map that you're missing</div><div class="row">${sel.drops.map(d=>`<span class="chip">${itemBtn(d)} −${deficit(d)}</span>`).join("")}</div></div>`:""}
     </div>
-    <div class="panel stack">
-      <div class="row" style="justify-content:space-between"><h2>Map</h2>
-        ${imgIds.length>1?`<div class="filters">${imgIds.map(x=>`<button data-img="${x}" aria-pressed="${x===imgSel}">${esc(MAPN[x]||x)}</button>`).join("")}</div>`:""}</div>
-      <div class="row"><label for="pinQ" class="mut" style="font-size:13px">Click the map to circle a spot for</label>
-        <select id="pinQ">${qOpts.map(id=>`<option value="${id}" ${S.pinQ===id?"selected":""}>${esc(Q[id].n)}</option>`).join("")}<option value="" ${S.pinQ===""?"selected":""}>Custom marker</option></select></div>
-      ${MAPIMG[imgSel]?`<div class="mapbox" id="mapbox"><img src="${MAPIMG[imgSel]}" alt="Map of ${esc(MAPN[imgSel]||imgSel)}" draggable="false">${pins.map(p=>`<div class="pin" style="left:${p.x}%;top:${p.y}%;border-color:${p.q?qColor[p.q]:"#fff"}"><span>${esc(p.q?Q[p.q]?.n:p.l||"marker")}</span></div>`).join("")}</div>`:`<div class="empty">No map image available.</div>`}
-      ${pins.length?`<ul class="plain">${pins.map((p,i)=>`<li class="row"><span class="qdot" style="background:${p.q?qColor[p.q]:"#fff"}"></span>${esc(p.q?Q[p.q]?.n:p.l||"marker")} <button class="btn sm" data-unpin="${i}">Remove</button></li>`).join("")}</ul>`:`<p class="note">The community data has the objective text but no coordinates. Circle each spot once and it stays here for later raids.</p>`}
-    </div>
+    ${mapPanel(sel,qOpts,imgIds,imgSel,pins)}
   </div></div>`;
 };
 function questBlock(id,compact){
@@ -405,6 +406,134 @@ V.scan=()=>{
    ${res}</div>`;
 };
 
+
+/* ---------- events ---------- */
+const EV=D.events||[];
+const evNow=m=>{const t=Date.now();return EV.filter(e=>e.m===m&&e.s<=t&&t<e.e)};
+const hm=ms=>new Date(ms).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+function eventsStrip(){
+  if(!EV.length)return "";
+  const t=Date.now(),last=Math.max(...EV.map(e=>e.e));
+  if(t>last)return `<p class="note">The event schedule in this build ran out on ${new Date(last).toLocaleString()}. Rebuild the app to refresh it.</p>`;
+  const now=EV.filter(e=>e.s<=t&&t<e.e),next=EV.filter(e=>e.s>t).sort((a,b)=>a.s-b.s).slice(0,6);
+  return `<div class="panel stack" style="gap:8px"><div class="row" style="justify-content:space-between"><h3>Map events</h3><span class="mut" style="font-size:12px">schedule from MetaForge</span></div>
+   <div class="row">${now.length?now.map(e=>`<span class="chip map">${esc(e.n)} · ${esc(MAPN[e.m]||e.m)} · until ${hm(e.e)}</span>`).join(""):`<span class="mut">No events running right now.</span>`}</div>
+   ${next.length?`<div class="row" style="font-size:12px"><span class="mut">Next:</span>${next.map(e=>`<span class="chip">${hm(e.s)} ${esc(e.n)} · ${esc(MAPN[e.m]||e.m)}</span>`).join("")}</div>`:""}
+   ${guideFor(now.concat(next).map(e=>e.n)).map(g=>`<a href="${esc(g.u)}" target="_blank" rel="noopener" style="font-size:12px" class="mut">Guide: ${esc(g.t)}</a>`).join(" ")}</div>`;
+}
+const EVENT_GUIDE={"harvester":"raiding-the-harvester","arcfrigate":"frigate-guide","lushblooms":"mushroom-spawn","hurricane":"first-wave-caches","prospectingprobes":"open-arc-probes","birdcity":"buried-city-bird-nest"};
+const guideFor=names=>{const out=[];names.forEach(n=>{const k=EVENT_GUIDE[n.toLowerCase().replace(/[^a-z]/g,"")];if(k){const g=(D.guides||[]).find(g=>g.u.includes(k));if(g&&!out.includes(g))out.push(g)}});return out};
+
+/* ---------- tactical map (drawn from MetaForge markers) ---------- */
+const MK=D.markers||{};
+const mkFor=m=>MK[m.startsWith("stella_montis")?"stella_montis":m];
+const LAYERS=[["quests","My quests"],["exits","Extracts & hatches"],["keys","Key rooms"],["caches","Raider caches"],["arc","ARC"],["nature","Nature"],["labels","Labels"]];
+const kindOf=sub=>{const[c,s2]=sub.split(":");
+  if(c==="quests")return"quest"; if(c==="locations"&&(s2==="extraction"||s2==="hatch"))return"exit";
+  if(c==="locations"&&s2==="locked_room")return"key"; if(c==="containers"&&/cache/.test(s2))return"cache";
+  if(c==="arc")return"arc"; if(c==="nature")return"nature"; if(c==="containers")return"loot"; return"other"};
+const NATURE_ITEM={};
+const normS=x=>String(x||"").toLowerCase().replace(/[^a-z]/g,"");
+Object.values(MK).forEach(m=>m.subs.forEach(sb=>{const[c,s2]=sb.split(":");if(c!=="nature"||NATURE_ITEM[s2]!==undefined)return;
+  const k=normS(s2);const hit=Object.keys(D.items).find(id=>{const n=normS(D.items[id].n);return n===k||n===k.replace(/s$/,"")||n.startsWith(k.slice(0,6))||k.startsWith(n)});NATURE_ITEM[s2]=hit||null}));
+const SUB_LABEL={raider_cache:"Raider caches",hurricane_cache:"First Wave caches",frozen_raider_cache:"Frozen Raider caches",arc_probe:"ARC probes",arc_courier:"ARC couriers",security_breach:"Security lockers",weapon_case:"Weapon cases",ammo_crate:"Ammo crates",med_crate:"Med crates",locker:"Lockers",car:"Cars"};
+function routeTargets(mk){
+  const t=[["list","Items on my shopping list"],["caches","Raider caches"],["sub:arc_probe|arc_courier","ARC probes & couriers"],["sub:security_breach|weapon_case","Security lockers & weapon cases"],["sub:med_crate","Med crates"],["sub:ammo_crate","Ammo crates"]];
+  const nat=[...new Set(mk.subs.filter(x=>x.startsWith("nature:")).map(x=>x.slice(7)))];
+  nat.forEach(n=>t.push(["nat:"+n,"Nature: "+(NATURE_ITEM[n]?nm(NATURE_ITEM[n]):n.replace(/-/g," "))]));
+  const areas=[...new Set(mk.areas.flatMap(a=>a.split(",").map(x=>x.trim())))].sort();
+  areas.forEach(a=>t.push(["area:"+a,`${a} loot spots`]));
+  return t;
+}
+function routeWeights(mk,target){
+  const W=new Array(mk.pts.length).fill(0);
+  const subIdx=mk.subs.map(x=>x.split(":"));
+  let natWanted=new Set(),areaWanted=new Set();
+  if(target==="list"){
+    Object.entries(NATURE_ITEM).forEach(([sub,id])=>{if(id&&deficit(id)>0)natWanted.add(sub)});
+    Object.keys(NEEDS).filter(id=>deficit(id)>0).forEach(id=>(I(id).f||"").split(",").forEach(z=>z.trim()&&areaWanted.add(z.trim())));
+  }
+  mk.pts.forEach((p,i)=>{const[c,sb]=subIdx[p[2]];const area=p[3]>=0?mk.areas[p[3]]:"";
+    if(S.floor&&p[6]&&p[6]!==S.floor)return;
+    if(target==="caches"){if(/cache/.test(sb))W[i]=1;return}
+    if(target.startsWith("sub:")){if(target.slice(4).split("|").includes(sb))W[i]=1;return}
+    if(target.startsWith("nat:")){if(c==="nature"&&sb===target.slice(4))W[i]=1;return}
+    if(target.startsWith("area:")){if(area.split(",").map(x=>x.trim()).includes(target.slice(5)))W[i]=1;return}
+    if(target==="list"){
+      if(c==="nature"&&natWanted.has(sb))W[i]=2;
+      else if(area&&area.split(",").some(z=>areaWanted.has(z.trim())))W[i]=1.5;
+      else if(/cache/.test(sb))W[i]=0.4;
+    }
+  });
+  return W;
+}
+function landmarks(mk){return mk.pts.filter(p=>p[4]&&/^locations:(extraction|hatch|locked_room|raider_camp|supply_station|field_depot|mast_lift)$/.test(mk.subs[p[2]]))}
+function nearestName(mk,x,y,list){let best=null,bd=1e18;(list||landmarks(mk)).forEach(p=>{const d=(p[0]-x)**2+(p[1]-y)**2;if(d<bd){bd=d;best=p}});return best}
+function computeRoute(mk,target){
+  const W=routeWeights(mk,target),[x0,y0,x1,y1]=mk.box,cs=Math.max(x1-x0,y1-y0)*0.06;
+  const cells={};mk.pts.forEach((p,i)=>{if(!W[i])return;const k=Math.floor((p[0]-x0)/cs)+","+Math.floor((p[1]-y0)/cs);const c=cells[k]=cells[k]||{w:0,sx:0,sy:0,n:0,k,subs:{}};c.w+=W[i];c.sx+=p[0]*W[i];c.sy+=p[1]*W[i];c.n++;const sb=mk.subs[p[2]].split(":")[1];c.subs[sb]=(c.subs[sb]||0)+1});
+  const sorted=Object.values(cells).sort((a,b)=>b.w-a.w),pick=[];
+  for(const c of sorted){if(pick.length>=6)break;const[a,b]=c.k.split(",").map(Number);if(pick.some(o=>{const[p2,q]=o.k.split(",").map(Number);return Math.abs(p2-a)<=1&&Math.abs(q-b)<=1}))continue;pick.push(c)}
+  if(!pick.length)return null;
+  pick.forEach(c=>{c.x=c.sx/c.w;c.y=c.sy/c.w});
+  const order=[pick.shift()];while(pick.length){const l=order[order.length-1];pick.sort((a,b)=>((a.x-l.x)**2+(a.y-l.y)**2)-((b.x-l.x)**2+(b.y-l.y)**2));order.push(pick.shift())}
+  const lm=landmarks(mk);order.forEach(c=>c.near=nearestName(mk,c.x,c.y,lm));
+  const exits=mk.pts.filter(p=>p[4]&&/locations:(extraction)/.test(mk.subs[p[2]]));
+  const last=order[order.length-1],exit=exits.length?nearestName(mk,last.x,last.y,exits):null;
+  return{stops:order,exit};
+}
+function mapPanel(sel,qOpts,imgIds,imgSel,pins){
+  const mk=mkFor(sel.m);const mode=mk&&S.mapMode!=="photo"?"tac":"photo";
+  const head=`<div class="row" style="justify-content:space-between"><h2>Map</h2><div class="filters">${mk?`<button data-mapmode="tac" aria-pressed="${mode==="tac"}">Tactical</button>`:""}<button data-mapmode="photo" aria-pressed="${mode==="photo"}">Photo</button></div></div>`;
+  if(mode==="photo")return `<div class="panel stack">${head}
+      ${imgIds.length>1?`<div class="filters">${imgIds.map(x=>`<button data-img="${x}" aria-pressed="${x===imgSel}">${esc(MAPN[x]||x)}</button>`).join("")}</div>`:""}
+      <div class="row"><label for="pinQ" class="mut" style="font-size:13px">Click the map to circle a spot for</label>
+        <select id="pinQ">${qOpts.map(id=>`<option value="${id}" ${S.pinQ===id?"selected":""}>${esc(Q[id].n)}</option>`).join("")}<option value="" ${S.pinQ===""?"selected":""}>Custom marker</option></select></div>
+      ${MAPIMG[imgSel]?`<div class="mapbox" id="mapbox"><img src="${MAPIMG[imgSel]}" alt="Map of ${esc(MAPN[imgSel]||imgSel)}" draggable="false">${pins.map(p=>`<div class="pin" style="left:${p.x}%;top:${p.y}%;border-color:${p.q?qColor[p.q]:"#fff"}"><span>${esc(p.q?Q[p.q]?.n:p.l||"marker")}</span></div>`).join("")}</div>`:`<div class="empty">No map image available.</div>`}
+      ${pins.length?`<ul class="plain">${pins.map((p,i)=>`<li class="row"><span class="qdot" style="background:${p.q?qColor[p.q]:"#fff"}"></span>${esc(p.q?Q[p.q]?.n:p.l||"marker")} <button class="btn sm" data-unpin="${i}">Remove</button></li>`).join("")}</ul>`:`<p class="note">Circle spots yourself on the photo map. The Tactical view marks quest spots automatically.</p>`}</div>`;
+  const L=S.layers||(S.layers={quests:1,exits:1,keys:1,caches:0,arc:0,nature:0,labels:1});
+  const targets=routeTargets(mk);if(!targets.find(t=>t[0]===S.routeT))S.routeT="list";
+  const R=computeRoute(mk,S.routeT);window.__route=R;
+  const qm=mk.pts.filter(p=>kindOf(mk.subs[p[2]])==="quest"&&sel.qs.concat(qOpts).includes(mk.subs[p[2]].slice(7).replace(/-/g,"_")));
+  const hasFloors=mk.pts.some(p=>p[6]);
+  return `<div class="panel stack">${head}
+    <div class="filters">${LAYERS.map(([k,l])=>`<button data-layer="${k}" aria-pressed="${!!L[k]}">${l}</button>`).join("")}</div>
+    ${hasFloors?`<div class="filters"><span class="mut" style="font-size:12px">Floor</span>${[[0,"All"],[1,"1"],[2,"2"]].map(([v,l])=>`<button data-floor="${v}" aria-pressed="${(S.floor||0)===v}">${l}</button>`).join("")}</div>`:""}
+    <div class="row"><label for="routeT" class="mut" style="font-size:13px">Loot route for</label><select id="routeT">${targets.map(([v,l])=>`<option value="${esc(v)}" ${S.routeT===v?"selected":""}>${esc(l)}</option>`).join("")}</select><label class="row" style="font-size:13px"><input type="checkbox" id="showRoute" ${S.showRoute!==false?"checked":""}> show</label></div>
+    <canvas id="tmap" class="mapbox" style="aspect-ratio:1;width:100%;height:auto;display:block" aria-label="Tactical map of ${esc(MAPN[sel.m])}"></canvas>
+    <div class="row" style="font-size:12px;gap:12px" aria-hidden="true"><span><span class="qdot" style="background:var(--accent)"></span> quest spot</span><span style="color:var(--keep)">▲ extract / hatch</span><span style="color:var(--gear)">■ key room</span><span style="color:var(--recycle)">◆ cache</span><span style="color:var(--sell)">• nature</span><span style="color:var(--warn)">• ARC</span><span class="mut">· other loot</span></div>
+    ${qm.length?`<div class="stack" style="gap:4px"><div class="eyebrow">Quest spots on this map (${qm.length})</div><ul class="plain" style="font-size:13px">${qm.slice(0,12).map(p=>{const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");return `<li class="row"><span class="qdot" style="background:${qColor[qid]}"></span><b>${esc(Q[qid]?.n||qid)}</b><span class="mut">${esc(p[4]||"")}</span></li>`}).join("")}</ul></div>`:sel.qs.length?`<p class="note">MetaForge has no marked spots yet for your quests on this map.</p>`:""}
+    ${R?`<div class="stack" style="gap:4px"><div class="eyebrow">Suggested loot route</div><ol class="obj" style="font-size:13px">${R.stops.map(c=>`<li><b>${c.near?`Near ${esc(c.near[4])}`:"Open area"}</b> <span class="mut">· ${Object.entries(c.subs).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,n])=>`${n} ${esc(SUB_LABEL[k]||(NATURE_ITEM[k]?nm(NATURE_ITEM[k]):k.replace(/[_-]/g," ")))}`).join(", ")}</span></li>`).join("")}${R.exit?`<li><b>Extract at ${esc(R.exit[4])}</b> <span class="mut">· nearest to the last stop</span></li>`:""}</ol>
+      <p class="note">Stops are the densest clusters of matching spawn spots from MetaForge's map data, ordered by distance. Spawn spots are chances, and each raid's loot zones change, so check the in-game map at drop.</p></div>`:`<p class="note">No matching spawn spots on this map for that target.</p>`}
+    <p class="mut" style="font-size:12px;margin:0">Map drawn from <a href="https://metaforge.app/arc-raiders" target="_blank" rel="noopener" class="mut">MetaForge</a> community markers (${fmt(mk.pts.length)} spots). It is a schematic, not the game's map art.</p>
+  </div>`;
+}
+function drawTactical(){
+  const cv=$("#tmap");if(!cv)return;const mk=mkFor(S.lobbyMap);if(!mk)return;
+  const css=getComputedStyle(document.documentElement),col=v=>css.getPropertyValue(v).trim();
+  const W=cv.clientWidth,dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=W*dpr;
+  const g=cv.getContext("2d");g.scale(dpr,dpr);g.fillStyle=col("--panel2");g.fillRect(0,0,W,W);
+  const[x0,y0,x1,y1]=mk.box,pad=14,sc=(W-2*pad)/Math.max(x1-x0,y1-y0),ox=pad+((W-2*pad)-(x1-x0)*sc)/2,oy=pad+((W-2*pad)-(y1-y0)*sc)/2;
+  const X=x=>ox+(x-x0)*sc,Y=y=>oy+(y-y0)*sc;window.__tx={X,Y,x0,y0,sc,ox,oy};
+  const L=S.layers||{},avail=new Set(Object.keys(Q).filter(id=>qStatus(id)==="avail"));
+  const pts=mk.pts.filter(p=>!(S.floor&&p[6]&&p[6]!==S.floor));
+  const kinds=pts.map(p=>kindOf(mk.subs[p[2]]));
+  g.fillStyle=col("--mut");g.globalAlpha=.45;pts.forEach((p,i)=>{if(kinds[i]==="loot"||kinds[i]==="other")g.fillRect(X(p[0])-1,Y(p[1])-1,2,2)});g.globalAlpha=1;
+  const dot=(p,c,r)=>{g.fillStyle=c;g.beginPath();g.arc(X(p[0]),Y(p[1]),r,0,7);g.fill()};
+  if(L.nature)pts.forEach((p,i)=>kinds[i]==="nature"&&dot(p,col("--sell"),1.6));
+  if(L.arc)pts.forEach((p,i)=>kinds[i]==="arc"&&dot(p,col("--warn"),1.8));
+  if(L.caches)pts.forEach((p,i)=>{if(kinds[i]!=="cache")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--recycle");g.beginPath();g.moveTo(x,y-3.5);g.lineTo(x+3.5,y);g.lineTo(x,y+3.5);g.lineTo(x-3.5,y);g.fill()});
+  g.font="11px "+col("--f-body");g.textBaseline="middle";
+  const label=(t,x,y,c)=>{if(!L.labels||!t)return;const w=g.measureText(t).width,lx=x+6+w>W-4?x-6-w:x+6;g.lineWidth=3;g.strokeStyle=col("--panel2");g.strokeText(t,lx,y);g.fillStyle=c;g.fillText(t,lx,y)};
+  if(L.keys)pts.forEach((p,i)=>{if(kinds[i]!=="key")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--gear");g.fillRect(x-3,y-3,6,6);label(p[4],x,y,col("--gear"))});
+  if(L.exits)pts.forEach((p,i)=>{if(kinds[i]!=="exit")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--keep");g.beginPath();g.moveTo(x,y-4.5);g.lineTo(x+4,y+3);g.lineTo(x-4,y+3);g.fill();label(p[4],x,y,col("--keep"))});
+  const R=window.__route;
+  if(R&&S.showRoute!==false){g.strokeStyle=col("--accent");g.lineWidth=2;g.setLineDash([5,4]);g.beginPath();R.stops.forEach((c,i)=>i?g.lineTo(X(c.x),Y(c.y)):g.moveTo(X(c.x),Y(c.y)));if(R.exit)g.lineTo(X(R.exit[0]),Y(R.exit[1]));g.stroke();g.setLineDash([]);
+    R.stops.forEach((c,i)=>{const x=X(c.x),y=Y(c.y);g.fillStyle=col("--accent");g.beginPath();g.arc(x,y,9,0,7);g.fill();g.fillStyle=col("--accent-ink");g.font="bold 11px "+col("--f-mono");g.textAlign="center";g.fillText(i+1,x,y+.5);g.textAlign="left"});g.font="11px "+col("--f-body")}
+  if(L.quests)pts.forEach((p,i)=>{if(kinds[i]!=="quest")return;const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");if(!avail.has(qid))return;const x=X(p[0]),y=Y(p[1]);g.strokeStyle=qColor[qid]||col("--accent");g.lineWidth=3;g.beginPath();g.arc(x,y,9,0,7);g.stroke();label(Q[qid]?.n,x+4,y,col("--fg"))});
+  (S.tpins?.[S.lobbyMap]||[]).forEach(p=>{const x=X(p.x),y=Y(p.y);g.strokeStyle=col("--fg");g.lineWidth=2;g.beginPath();g.arc(x,y,8,0,7);g.stroke();label(p.l||"marker",x+3,y,col("--fg"))});
+}
+
 /* ---------- skills ---------- */
 const SK={};(D.skills||[]).forEach(s=>SK[s.n]=s);
 const BR=[["CONDITIONING","Conditioning"],["MOBILITY","Mobility"],["SURVIVAL","Survival"]];
@@ -465,6 +594,7 @@ function render(){
   const ae=document.activeElement,aid=ae&&ae.id,pos=ae&&ae.selectionStart;
   $("#main").innerHTML=V[S.tab]();
   if(aid&&document.getElementById(aid)){const el=document.getElementById(aid);el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}
+  drawTactical();
   save();
 }
 const BY_NAME={};Object.entries(D.items).forEach(([id,i])=>BY_NAME[i.n.toLowerCase()]=id);
@@ -478,6 +608,11 @@ document.addEventListener("click",e=>{
   else if(d.doneall){ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}
   else if(d.build){S.build=d.build;render()}
+  else if(d.mapmode){S.mapMode=d.mapmode;render()}
+  else if(d.layer){S.layers[d.layer]=S.layers[d.layer]?0:1;render()}
+  else if(d.floor!==undefined){S.floor=+d.floor;render()}
+  else if(d.showmap){S.lobbyMap=d.showmap;S.routeT=d.route;S.mapMode="tac";S.tab="lobby";$("#dlg").close();render()}
+
   else if(d.vf){S.vf=d.vf;render()}
   else if(d.del){setQty(d.del,0);render()}
   else if(d.unpin!==undefined){const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];S.pins[k].splice(+d.unpin,1);render()}
@@ -500,18 +635,27 @@ function addItem(){const n=$("#addName").value.trim().toLowerCase();const id=BY_
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addName")addItem()});
 document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   if(d.qty){setQty(d.qty,+t.value);render()}
+  else if(d.use){S.use=S.use||{};if(t.checked)S.use[d.use]=1;else delete S.use[d.use];save();openItem(d.use)}
   else if(d.scancount!==undefined){S.scan.items[+d.scancount].count=Math.max(0,+t.value||0);save()}
   else if(d.hide){S.hide[d.hide]=+t.value;render()}
   else if(d.proj){S.proj[d.proj]=+t.value;render()}
   else if(t.id==="optFuture"){S.future=t.checked;render()}
   else if(t.id==="optProj"){S.useProj=t.checked;render()}
   else if(t.id==="pinQ"){S.pinQ=t.value;save()}
+  else if(t.id==="routeT"){S.routeT=t.value;render()}
+  else if(t.id==="showRoute"){S.showRoute=t.checked;render()}
   else if(t.id==="it"){S.it=t.value;render()}
   else if(t.id==="skPtsN"||t.id==="skPts"){S.skillPts=+t.value;render()}
 });
 document.addEventListener("input",e=>{const t=e.target;
   if(t.id==="skPts"){const n=$("#skPtsN");if(n)n.value=t.value}
   else if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});
+document.addEventListener("click",e=>{if(e.target.id!=="tmap"||!window.__tx)return;const r=e.target.getBoundingClientRect(),T=window.__tx;
+  const x=Math.round(T.x0+((e.clientX-r.left)-T.ox)/T.sc),y=Math.round(T.y0+((e.clientY-r.top)-T.oy)/T.sc);
+  S.tpins=S.tpins||{};const list=S.tpins[S.lobbyMap]=S.tpins[S.lobbyMap]||[];
+  const hit=list.findIndex(p=>Math.hypot(T.ox+(p.x-T.x0)*T.sc-(e.clientX-r.left),T.oy+(p.y-T.y0)*T.sc-(e.clientY-r.top))<10);
+  if(hit>=0)list.splice(hit,1);else list.push({x,y,l:"marker"});render()});
+window.addEventListener("resize",()=>drawTactical());
 document.addEventListener("click",e=>{const box=e.target.closest("#mapbox");if(!box)return;
   const r=box.getBoundingClientRect();const x=((e.clientX-r.left)/r.width*100).toFixed(2),y=((e.clientY-r.top)/r.height*100).toFixed(2);
   const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];const q=$("#pinQ")?.value||"";

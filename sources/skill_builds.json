@@ -1,0 +1,869 @@
+{
+ "_source": "Build orders from Arc Raiders Hub's 'Best Skill Tree Builds' guide (https://arcraidershub.com/guides/recommended-skill-tree-guide), updated for Frozen Trail on 2026-10-09; based on Millzaa's in-raid tests. Maintained by hand: the site's terms do not allow automated scraping.",
+ "builds": [
+  {
+   "id": "pve",
+   "n": "PvE",
+   "sub": "the loot mule",
+   "phases": [
+    {
+     "n": "The three roots",
+     "from": 1,
+     "to": 3,
+     "steps": [
+      [
+       "Youthful Lungs",
+       1
+      ],
+      [
+       "In-round Crafting",
+       1
+      ],
+      [
+       "Used To The Weight",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to its first diamond",
+     "from": 4,
+     "to": 15,
+     "steps": [
+      [
+       "Nimble Climber",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       4
+      ],
+      [
+       "Vault Spring",
+       1
+      ],
+      [
+       "Marathon Runner",
+       2
+      ]
+     ]
+    },
+    {
+     "n": "Survival to Quick Roll",
+     "from": 16,
+     "to": 25,
+     "steps": [
+      [
+       "Looter's Instincts",
+       5
+      ],
+      [
+       "Silent Scavenger",
+       4
+      ],
+      [
+       "Quick Roll",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Mule's Gallop and carry weight",
+     "from": 26,
+     "to": 41,
+     "steps": [
+      [
+       "Three Deep Breaths",
+       5
+      ],
+      [
+       "Vigorous Vaulter",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       1
+      ],
+      [
+       "Vault 'N' Carry",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       2
+      ],
+      [
+       "Mule's Gallop",
+       1
+      ],
+      [
+       "Loaded Arms",
+       1
+      ],
+      [
+       "Broad Shoulders",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Security Breach",
+     "from": 42,
+     "to": 55,
+     "steps": [
+      [
+       "Downed But Determined",
+       5
+      ],
+      [
+       "Crawl Before You Walk",
+       5
+      ],
+      [
+       "Speedy Mule",
+       3
+      ],
+      [
+       "Security Breach",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Back to Mobility",
+     "from": 56,
+     "to": 68,
+     "steps": [
+      [
+       "Marathon Runner",
+       5
+      ],
+      [
+       "Effortless Roll",
+       5
+      ],
+      [
+       "Swift Start",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "The Survival loot engine",
+     "from": 69,
+     "to": 76,
+     "steps": [
+      [
+       "Traveling Tinkerer",
+       1
+      ],
+      [
+       "Looter's Luck",
+       5
+      ],
+      [
+       "Gentle Pressure",
+       1
+      ],
+      [
+       "A Little Extra",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Expedition points: the full mule",
+     "from": 77,
+     "to": 91,
+     "steps": [
+      [
+       "Speedy Mule",
+       5
+      ],
+      [
+       "Proficient Pryer",
+       5
+      ],
+      [
+       "Stubborn Mule",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       5
+      ],
+      [
+       "Slip And Slide",
+       4
+      ]
+     ]
+    }
+   ],
+   "cap": "Security Breach",
+   "split76": [
+    31,
+    26,
+    19
+   ],
+   "split91": [
+    41,
+    31,
+    19
+   ]
+  },
+  {
+   "id": "pvpsolo",
+   "n": "PvP solo",
+   "sub": "speed and escape",
+   "phases": [
+    {
+     "n": "The three roots",
+     "from": 1,
+     "to": 3,
+     "steps": [
+      [
+       "Youthful Lungs",
+       1
+      ],
+      [
+       "In-round Crafting",
+       1
+      ],
+      [
+       "Used To The Weight",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to its first diamond",
+     "from": 4,
+     "to": 15,
+     "steps": [
+      [
+       "Nimble Climber",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       4
+      ],
+      [
+       "Vault Spring",
+       1
+      ],
+      [
+       "Marathon Runner",
+       2
+      ]
+     ]
+    },
+    {
+     "n": "Survival to Quick Roll",
+     "from": 16,
+     "to": 25,
+     "steps": [
+      [
+       "Looter's Instincts",
+       5
+      ],
+      [
+       "Silent Scavenger",
+       1
+      ],
+      [
+       "Sturdy Ankles",
+       3
+      ],
+      [
+       "Quick Roll",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Mule's Gallop and carry weight",
+     "from": 26,
+     "to": 41,
+     "steps": [
+      [
+       "Three Deep Breaths",
+       5
+      ],
+      [
+       "Vigorous Vaulter",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       3
+      ],
+      [
+       "Mule's Gallop",
+       1
+      ],
+      [
+       "Loaded Arms",
+       1
+      ],
+      [
+       "Broad Shoulders",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to Sprinting on Fumes",
+     "from": 42,
+     "to": 59,
+     "steps": [
+      [
+       "Marathon Runner",
+       5
+      ],
+      [
+       "Effortless Roll",
+       5
+      ],
+      [
+       "Swift Start",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       5
+      ],
+      [
+       "Right Back At It",
+       1
+      ],
+      [
+       "Off The Wall",
+       2
+      ],
+      [
+       "Sprinting On Fumes",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "The downed skills",
+     "from": 60,
+     "to": 69,
+     "steps": [
+      [
+       "Downed But Determined",
+       5
+      ],
+      [
+       "Crawl Before You Walk",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Looter's Luck and the last point",
+     "from": 70,
+     "to": 76,
+     "steps": [
+      [
+       "Traveling Tinkerer",
+       1
+      ],
+      [
+       "Looter's Luck",
+       5
+      ],
+      [
+       "Off The Wall",
+       3
+      ]
+     ]
+    },
+    {
+     "n": "Expedition points: Wall Run, then carry speed",
+     "from": 77,
+     "to": 91,
+     "steps": [
+      [
+       "Off The Wall",
+       5
+      ],
+      [
+       "Slip And Slide",
+       5
+      ],
+      [
+       "Sure-Footed Scrambler",
+       1
+      ],
+      [
+       "Wall Run",
+       1
+      ],
+      [
+       "Speedy Mule",
+       5
+      ],
+      [
+       "Proficient Pryer",
+       1
+      ]
+     ]
+    }
+   ],
+   "cap": "Sprinting on Fumes, then Wall Run",
+   "split76": [
+    27,
+    32,
+    17
+   ],
+   "split91": [
+    33,
+    41,
+    17
+   ]
+  },
+  {
+   "id": "pvpsquad",
+   "n": "PvP squad",
+   "sub": "speed, and stay alive while downed",
+   "phases": [
+    {
+     "n": "The three roots",
+     "from": 1,
+     "to": 3,
+     "steps": [
+      [
+       "Youthful Lungs",
+       1
+      ],
+      [
+       "In-round Crafting",
+       1
+      ],
+      [
+       "Used To The Weight",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to its first diamond",
+     "from": 4,
+     "to": 15,
+     "steps": [
+      [
+       "Nimble Climber",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       4
+      ],
+      [
+       "Vault Spring",
+       1
+      ],
+      [
+       "Marathon Runner",
+       2
+      ]
+     ]
+    },
+    {
+     "n": "Survival to Quick Roll",
+     "from": 16,
+     "to": 25,
+     "steps": [
+      [
+       "Looter's Instincts",
+       5
+      ],
+      [
+       "Silent Scavenger",
+       1
+      ],
+      [
+       "Sturdy Ankles",
+       3
+      ],
+      [
+       "Quick Roll",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Mule's Gallop and carry weight",
+     "from": 26,
+     "to": 41,
+     "steps": [
+      [
+       "Three Deep Breaths",
+       5
+      ],
+      [
+       "Vigorous Vaulter",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       3
+      ],
+      [
+       "Mule's Gallop",
+       1
+      ],
+      [
+       "Loaded Arms",
+       1
+      ],
+      [
+       "Broad Shoulders",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to Sprinting on Fumes",
+     "from": 42,
+     "to": 59,
+     "steps": [
+      [
+       "Marathon Runner",
+       5
+      ],
+      [
+       "Effortless Roll",
+       5
+      ],
+      [
+       "Swift Start",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       5
+      ],
+      [
+       "Right Back At It",
+       1
+      ],
+      [
+       "Off The Wall",
+       2
+      ],
+      [
+       "Sprinting On Fumes",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "The downed skills",
+     "from": 60,
+     "to": 69,
+     "steps": [
+      [
+       "Downed But Determined",
+       5
+      ],
+      [
+       "Crawl Before You Walk",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Looter's Luck and the last point",
+     "from": 70,
+     "to": 76,
+     "steps": [
+      [
+       "Traveling Tinkerer",
+       1
+      ],
+      [
+       "Looter's Luck",
+       5
+      ],
+      [
+       "Off The Wall",
+       3
+      ]
+     ]
+    },
+    {
+     "n": "Expedition points: Wall Run, then Turtle Crawl",
+     "from": 77,
+     "to": 91,
+     "steps": [
+      [
+       "Off The Wall",
+       5
+      ],
+      [
+       "Slip And Slide",
+       5
+      ],
+      [
+       "Sure-Footed Scrambler",
+       1
+      ],
+      [
+       "Wall Run",
+       1
+      ],
+      [
+       "Stylish Landing",
+       1
+      ],
+      [
+       "Turtle Crawl",
+       5
+      ]
+     ]
+    }
+   ],
+   "cap": "Sprinting on Fumes, then Wall Run",
+   "split76": [
+    27,
+    32,
+    17
+   ],
+   "split91": [
+    27,
+    41,
+    23
+   ]
+  },
+  {
+   "id": "pvpve",
+   "n": "PvPvE",
+   "sub": "a bit of everything",
+   "phases": [
+    {
+     "n": "The three roots",
+     "from": 1,
+     "to": 3,
+     "steps": [
+      [
+       "Youthful Lungs",
+       1
+      ],
+      [
+       "In-round Crafting",
+       1
+      ],
+      [
+       "Used To The Weight",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to its first diamond",
+     "from": 4,
+     "to": 15,
+     "steps": [
+      [
+       "Nimble Climber",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       4
+      ],
+      [
+       "Vault Spring",
+       1
+      ],
+      [
+       "Marathon Runner",
+       2
+      ]
+     ]
+    },
+    {
+     "n": "Survival to Quick Roll",
+     "from": 16,
+     "to": 25,
+     "steps": [
+      [
+       "Looter's Instincts",
+       5
+      ],
+      [
+       "Sturdy Ankles",
+       3
+      ],
+      [
+       "Silent Scavenger",
+       1
+      ],
+      [
+       "Quick Roll",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Mule's Gallop and carry weight",
+     "from": 26,
+     "to": 41,
+     "steps": [
+      [
+       "Three Deep Breaths",
+       5
+      ],
+      [
+       "Vigorous Vaulter",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       1
+      ],
+      [
+       "Vault 'N' Carry",
+       1
+      ],
+      [
+       "Stubborn Mule",
+       2
+      ],
+      [
+       "Mule's Gallop",
+       1
+      ],
+      [
+       "Loaded Arms",
+       1
+      ],
+      [
+       "Broad Shoulders",
+       5
+      ]
+     ]
+    },
+    {
+     "n": "Mobility to Sprinting on Fumes",
+     "from": 42,
+     "to": 59,
+     "steps": [
+      [
+       "Marathon Runner",
+       5
+      ],
+      [
+       "Effortless Roll",
+       5
+      ],
+      [
+       "Swift Start",
+       5
+      ],
+      [
+       "Fight Or Flight",
+       5
+      ],
+      [
+       "Right Back At It",
+       1
+      ],
+      [
+       "Off The Wall",
+       2
+      ],
+      [
+       "Sprinting On Fumes",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "Conditioning to Security Breach",
+     "from": 60,
+     "to": 73,
+     "steps": [
+      [
+       "Downed But Determined",
+       5
+      ],
+      [
+       "Crawl Before You Walk",
+       5
+      ],
+      [
+       "Speedy Mule",
+       3
+      ],
+      [
+       "Security Breach",
+       1
+      ]
+     ]
+    },
+    {
+     "n": "A taste of Looter's Luck",
+     "from": 74,
+     "to": 76,
+     "steps": [
+      [
+       "Traveling Tinkerer",
+       1
+      ],
+      [
+       "Looter's Luck",
+       2
+      ]
+     ]
+    },
+    {
+     "n": "Expedition points: Wall Run and Looter's Luck",
+     "from": 77,
+     "to": 91,
+     "steps": [
+      [
+       "Off The Wall",
+       5
+      ],
+      [
+       "Slip And Slide",
+       5
+      ],
+      [
+       "Sure-Footed Scrambler",
+       1
+      ],
+      [
+       "Wall Run",
+       1
+      ],
+      [
+       "Looter's Luck",
+       5
+      ],
+      [
+       "Proficient Pryer",
+       2
+      ]
+     ]
+    }
+   ],
+   "cap": "Security Breach and Sprinting on Fumes, then Wall Run",
+   "split76": [
+    31,
+    31,
+    14
+   ],
+   "split91": [
+    33,
+    41,
+    17
+   ]
+  }
+ ]
+}

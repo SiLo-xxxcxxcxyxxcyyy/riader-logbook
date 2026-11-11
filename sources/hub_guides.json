@@ -1,0 +1,265 @@
+{
+ "_source": "Links to Arc Raiders Hub guides (titles paraphrased). Links only, no content copied.",
+ "guides": [
+  {
+   "u": "https://arcraidershub.com/guides/agave-fertilizer-moss-locations-guide",
+   "t": "Agave, Fertilizer and Moss locations",
+   "items": [
+    "agave",
+    "fertilizer",
+    "moss"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/amplification-module-guide",
+   "t": "Where to find Amplification Modules",
+   "items": [
+    "amplification_module_mk_i",
+    "amplification_module_mk_ii",
+    "amplification_module_mk_iii",
+    "amplification_module_mk_iv",
+    "amplification_module_mk_v"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/amplified-weapons-guide",
+   "t": "Amplified weapons: how to amplify",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/arc-raiders-beginners-guide",
+   "t": "Beginner's guide",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/ballistic-gondola-extraction-guide",
+   "t": "Extracting on Pendola Pass: the Ballistic Gondola",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/bully-guide",
+   "t": "How to kill the Bully",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/buried-city-bird-nest-locations-guide",
+   "t": "Buried City bird nest locations",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/calculator-location-guide",
+   "t": "Where to find the Calculator",
+   "items": [
+    "calculator"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/candleberry-spawn-locations-guide",
+   "t": "Candleberry spawn locations",
+   "items": [
+    "candleberries"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/canto-blueprint-guide",
+   "t": "Canto blueprint",
+   "items": [
+    "canto_blueprint"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/comet-igniter-firefly-burner-guide",
+   "t": "Comet Igniter and Firefly Burner",
+   "items": [
+    "comet_igniter",
+    "firefly_burner"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/converging-paths-project-guide",
+   "t": "Converging Paths project",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/damage-fireflies-trial-guide",
+   "t": "Damage Fireflies trial",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/differential-microphone-location-guide",
+   "t": "Where to find the Differential Microphone",
+   "items": [
+    "differential_microphone"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/disarm-mines-locked-gate-guide",
+   "t": "Disarming mines and the locked gate",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/dolabra-blueprint-guide",
+   "t": "Dolabra blueprint",
+   "items": [
+    "dolabra_blueprint"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/epoxy-bucket-location-guide",
+   "t": "Where to find the Epoxy Bucket",
+   "items": [
+    "epoxy_bucket"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/expired-respirators-locations-guide",
+   "t": "Expired Respirator locations",
+   "items": [
+    "expired_respirator"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/fallen-emperor-guide",
+   "t": "Fallen Emperor",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/first-wave-caches-guide",
+   "t": "First Wave and Raider cache locations",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/frigate-guide",
+   "t": "ARC Frigate",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/frozen-raider-caches-guide",
+   "t": "Frozen Raider cache locations",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/hand-drill-location-guide",
+   "t": "Where to find the Hand Drill",
+   "items": [
+    "hand_drill"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/insulation-roll-location-guide",
+   "t": "Where to find the Insulation Roll",
+   "items": [
+    "insulation_roll"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/inventory-management-guide",
+   "t": "Stash management",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/laser-level-location-guide",
+   "t": "Where to find the Laser Level",
+   "items": [
+    "laser_level"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/mini-pump-location-guide",
+   "t": "Where to find the Mini Pump",
+   "items": [
+    "mini_pump"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/mushroom-spawn-locations-guide",
+   "t": "Mushroom spawn locations",
+   "items": [
+    "mushroom"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/open-arc-probes-guide",
+   "t": "Opening ARC probes",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/phantom-targets-project-guide",
+   "t": "Phantom Targets project",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/planks-sheet-metal-locations-guide",
+   "t": "Where to find Planks and Sheet Metal",
+   "items": [
+    "planks",
+    "sheet_metal"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/radial-press-location-guide",
+   "t": "Where to find the Radial Press",
+   "items": [
+    "radial_press"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/raiding-the-harvester-guide",
+   "t": "Raiding the Harvester",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/rascal-blueprint-guide",
+   "t": "Rascal blueprint",
+   "items": [
+    "rascal_blueprint"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/recommended-skill-tree-guide",
+   "t": "Skill tree builds",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/search-first-wave-husks-guide",
+   "t": "Searching First Wave husks",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/ship-model-locations-guide",
+   "t": "Ship model locations",
+   "items": [
+    "ship_model"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/thermal-rock-spawn-locations-guide",
+   "t": "Thermal Rock spawn locations",
+   "items": [
+    "thermal_rock"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/thermal-shaker-location-guide",
+   "t": "Where to find the Thermal Shaker",
+   "items": [
+    "thermal_shaker"
+   ]
+  },
+  {
+   "u": "https://arcraidershub.com/guides/toxic-swamp-event-guide",
+   "t": "Toxic Swamp event",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/weapon-stencils-guide",
+   "t": "Weapon stencils",
+   "items": []
+  },
+  {
+   "u": "https://arcraidershub.com/guides/avian-alarm-project-guide",
+   "t": "Avian Alarm project",
+   "items": []
+  }
+ ]
+}
