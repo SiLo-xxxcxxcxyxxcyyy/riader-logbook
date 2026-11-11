@@ -1,0 +1,465 @@
+<title>Raider Logbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky tab bar over a single working column; each tab is a tool surface, map + list side by side on wide screens. */
+:root{
+  --bg:#12161b; --panel:#1a2027; --panel2:#222a33; --line:#2e3843; --fg:#e4e8ec; --mut:#8b97a3;
+  --accent:#f2a531; --accent-ink:#1b1305;
+  --keep:#5fb3e8; --sell:#7cc576; --recycle:#d9b44a; --gear:#b49af0; --warn:#ef6b5b;
+  --f-disp:"Chakra Petch","Bahnschrift","Arial Narrow",sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#eef1f3; --panel:#ffffff; --panel2:#f3f5f7; --line:#d4dbe1; --fg:#151b21; --mut:#5b6773;
+  --accent:#c77a00; --accent-ink:#fff8ec;
+  --keep:#1f78b4; --sell:#2f8a2a; --recycle:#8f6c00; --gear:#6b4cc4; --warn:#c23b2b; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#eef1f3; --panel:#ffffff; --panel2:#f3f5f7; --line:#d4dbe1; --fg:#151b21; --mut:#5b6773;
+  --accent:#c77a00; --accent-ink:#fff8ec;
+  --keep:#1f78b4; --sell:#2f8a2a; --recycle:#8f6c00; --gear:#6b4cc4; --warn:#c23b2b; color-scheme:light}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:10px}
+.brand{font-family:var(--f-disp);font-weight:700;font-size:20px;letter-spacing:.04em;text-transform:uppercase;display:flex;gap:8px;align-items:baseline}
+.brand small{font-family:var(--f-mono);font-weight:400;font-size:11px;color:var(--mut);letter-spacing:.08em}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap}
+nav.tabs button{font-family:var(--f-disp);font-weight:600;font-size:14px;letter-spacing:.06em;text-transform:uppercase;background:none;border:1px solid transparent;color:var(--mut);padding:6px 12px;border-radius:4px;cursor:pointer}
+nav.tabs button:hover{color:var(--fg)}
+nav.tabs button[aria-selected="true"]{color:var(--accent-ink);background:var(--accent)}
+main{padding-block:20px 60px}
+h1,h2,h3{font-family:var(--f-disp);font-weight:600;text-wrap:balance;margin:0;letter-spacing:.02em}
+h1{font-size:26px} h2{font-size:20px} h3{font-size:16px}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.mut{color:var(--mut)} .mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:20px;align-items:start}
+@media (max-width:860px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
+.btn{font:inherit;font-size:13px;font-weight:500;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:5px 10px;cursor:pointer}
+.btn:hover{border-color:var(--mut)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.sm{font-size:12px;padding:2px 8px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select,textarea{font:inherit;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-width:0}
+input[type=number]{width:72px;font-family:var(--f-mono)}
+.pill{display:inline-flex;align-items:center;gap:4px;font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:3px;border:1px solid currentColor;white-space:nowrap}
+.v-keep{color:var(--keep)} .v-sell{color:var(--sell)} .v-recycle{color:var(--recycle)} .v-gear,.v-learn{color:var(--gear)} .v-mat{color:var(--mut)}
+.chip{font-family:var(--f-mono);font-size:11px;padding:1px 7px;border-radius:3px;background:var(--panel2);border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.chip.map{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.itemlink{color:var(--fg);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;cursor:pointer;background:none;border:0;padding:0;font:inherit}
+.itemlink:hover{text-decoration-color:var(--accent)}
+.filters{display:flex;gap:4px;flex-wrap:wrap}
+.filters button{font-family:var(--f-mono);font-size:12px;background:none;border:1px solid var(--line);color:var(--mut);padding:3px 10px;border-radius:3px;cursor:pointer}
+.filters button[aria-pressed="true"]{color:var(--fg);border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+table{border-collapse:collapse;width:100%}
+.tbl{overflow-x:auto}
+th{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.thumb{width:28px;height:28px;object-fit:contain;vertical-align:middle;border-radius:3px;background:var(--panel2)}
+.r-Common{border-left:3px solid #8a949e}.r-Uncommon{border-left:3px solid #4fa64a}.r-Rare{border-left:3px solid #3f8fd6}.r-Epic{border-left:3px solid #a45ad8}.r-Legendary{border-left:3px solid #e0a020}
+
+/* lobby */
+.maprank{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.mapcard{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;cursor:pointer;color:var(--fg);font:inherit;display:flex;flex-direction:column;gap:2px}
+.mapcard[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.mapcard .n{font-family:var(--f-disp);font-weight:600;font-size:15px}
+.mapcard .big{font-family:var(--f-disp);font-size:28px;font-weight:700;line-height:1;color:var(--accent)}
+.mapcard.best .n::after{content:"  ▸ best pick";font-family:var(--f-mono);font-size:10px;color:var(--accent);letter-spacing:.06em}
+.quest{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.quest:first-child{border-top:0;padding-top:0}
+.quest h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.qdot{width:12px;height:12px;border-radius:50%;flex:none;border:2px solid var(--bg)}
+ol.obj{margin:0;padding-left:20px} ol.obj li{margin:2px 0}
+.mapbox{position:relative;width:100%;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:var(--panel2);cursor:crosshair;user-select:none}
+.mapbox img{display:block;width:100%;height:auto;max-width:100%}
+.pin{position:absolute;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;border:3px solid;background:transparent;pointer-events:none;box-shadow:0 0 0 2px rgba(0,0,0,.55)}
+.pin span{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:3px;white-space:nowrap;font-family:var(--f-mono);font-size:10px;background:rgba(0,0,0,.75);color:#fff;padding:0 4px;border-radius:2px}
+.empty{padding:28px 16px;text-align:center;color:var(--mut);border:1px dashed var(--line);border-radius:6px}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:0;width:min(640px,calc(100vw - 32px));max-height:85vh}
+dialog::backdrop{background:rgba(5,8,12,.6)}
+dialog .hd{display:flex;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+dialog .bd{padding:16px;display:flex;flex-direction:column;gap:14px;overflow-wrap:anywhere}
+dialog img.big{width:56px;height:56px;object-fit:contain;background:var(--panel2);border-radius:4px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}
+.kv dt{color:var(--mut);font-size:13px} .kv dd{margin:0}
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.note{font-size:13px;color:var(--mut);border-left:2px solid var(--line);padding-left:10px}
+.sum{display:flex;gap:20px;flex-wrap:wrap}
+.sum div{display:flex;flex-direction:column}
+.sum b{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:4px;font-weight:600;z-index:20}
+@media (prefers-reduced-motion:no-preference){.mapcard,.btn{transition:border-color .15s}}
+.desk-only{display:none} body.desk .desk-only{display:revert}
+body.desk .web-only{display:none}
+.kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 6px;background:var(--panel2)}
+.scanlist{max-height:320px;overflow:auto}
+.conf{font-family:var(--f-mono);font-size:11px;color:var(--mut)}
+.conf.low{color:var(--warn)}
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="brand">Raider Logbook</div>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="lobby">Lobby</button>
+    <button role="tab" data-tab="vault">Vault</button>
+    <button role="tab" data-tab="quests">Quests</button>
+    <button role="tab" data-tab="needs">Shopping list</button>
+    <button role="tab" data-tab="items">Items</button>
+    <button role="tab" data-tab="scan">Scan</button>
+  </nav>
+</div></header>
+
+<main class="wrap" id="main"></main>
+
+<dialog id="dlg"><div class="hd"><img class="big" id="dlgImg" alt=""><div style="flex:1;min-width:0"><div class="eyebrow" id="dlgSub"></div><h2 id="dlgTitle"></h2></div><button class="btn" id="dlgClose">Close</button></div><div class="bd" id="dlgBody"></div></dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const D=/*__DATA__*/null, MAPIMG=/*__MAPS__*/null;
+const MAPN={...D.maps,stella_montis:"Stella Montis"};
+const QMAP_TO_IMG={stella_montis:["stella_montis_upper","stella_montis_lower"]};
+const COLORS=["#f2a531","#5fb3e8","#e8607a","#7cc576","#b49af0","#4fd1c5","#f07b3f","#d6d04a"];
+const GEAR=new Set(["Assault Rifle","SMG","Pistol","Shotgun","Battle Rifle","Sniper Rifle","LMG","Hand Cannon","Augment","Shield","Quick Use","Ammunition","Modification"]);
+const MATS=new Set(["Basic Material","Refined Material","Topside Material","Nature"]);
+
+/* ---------- state ---------- */
+const KEY="raider-logbook-v1";
+const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:false,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"avail",vf:"all",scan:null},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const I=id=>D.items[id]||{n:id.replace(/_/g," ")};
+const nm=id=>I(id).n;
+const fmt=n=>Number(n).toLocaleString("en-US");
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+const have=id=>S.inv[id]||0;
+function toast(t){const e=$("#toast");e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2200)}
+const itemBtn=(id,label)=>`<button class="itemlink" data-item="${esc(id)}">${esc(label??nm(id))}</button>`;
+const thumb=id=>I(id).img?`<img class="thumb" loading="lazy" src="${esc(I(id).img)}" alt="" onerror="this.style.visibility='hidden'">`:"";
+let DESK=false;
+const api=()=>window.pywebview&&window.pywebview.api;
+
+/* ---------- quests ---------- */
+const Q=D.quests;
+const qStatus=id=>S.done[id]?"done":((Q[id].pre||[]).filter(p=>Q[p]).every(p=>S.done[p])?"avail":"locked");
+const qColor={};Object.keys(Q).sort().forEach((id,i)=>qColor[id]=COLORS[i%COLORS.length]);
+function ancestors(id,acc=new Set()){(Q[id]?.pre||[]).forEach(p=>{if(Q[p]&&!acc.has(p)){acc.add(p);ancestors(p,acc)}});return acc}
+
+/* ---------- needs ---------- */
+let NEEDS=null;
+function computeNeeds(){
+  const N={};const add=(it,q,src,kind)=>{(N[it]=N[it]||[]).push({q,src,kind})};
+  for(const[id,q]of Object.entries(Q)){const st=qStatus(id);if(st==="done")continue;if(st==="locked"&&!S.future)continue;
+    for(const[it,n]of Object.entries(q.req||{}))add(it,n,`Quest: ${q.n}`,st==="avail"?"qa":"qf")}
+  for(const[id,h]of Object.entries(D.hideout)){const cur=S.hide[id]||0;
+    for(const[lv,r]of Object.entries(h.lv)){if(+lv<=cur)continue;for(const[it,n]of Object.entries(r))add(it,n,`${h.n} lvl ${lv}`,+lv===cur+1?"ha":"hf")}}
+  if(S.useProj)for(const[id,p]of Object.entries(D.projects)){const cur=S.proj[id]||0;
+    p.ph.forEach((ph,i)=>{if(i<cur)return;for(const[it,n]of Object.entries(ph.req))add(it,n,`Project: ${p.n} – phase ${i+1}`,"p")})}
+  NEEDS=N;
+}
+const needTotal=id=>(NEEDS[id]||[]).reduce((a,b)=>a+b.q,0);
+const deficit=id=>Math.max(0,needTotal(id)-have(id));
+const RECIPE_USE={};for(const[id,it]of Object.entries(D.items))for(const m of Object.keys(it.rp||{}))(RECIPE_USE[m]=RECIPE_USE[m]||[]).push(id);
+
+function verdict(id,count){
+  const it=I(id),n=needTotal(id),keep=Math.min(count,n),extra=count-keep;
+  const base={keep,extra,n};
+  if(extra<=0)return{...base,k:"keep",label:"Keep",why:"You need all of them"};
+  const pre=keep>0?`Keep ${keep}, then `:"";
+  if(it.t==="Blueprint")return{...base,k:"learn",label:"Learn",why:pre+"learn the blueprint first, sell duplicates"};
+  if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+"use it in a raid or sell it"};
+  if(GEAR.has(it.t))return{...base,k:"gear",label:"Gear",why:pre+"raid gear, your call"};
+  const rc=Object.keys(it.rc||{}).filter(m=>deficit(m)>0);
+  if(rc.length)return{...base,k:"recycle",label:"Recycle",why:pre+"recycle it for "+rc.map(m=>`${it.rc[m]}× ${nm(m)}`).join(", "),rc};
+  if(MATS.has(it.t)&&RECIPE_USE[id])return{...base,k:"mat",label:"Material",why:pre+`used in ${plural(RECIPE_USE[id].length,"recipe")}, keep a sensible stock`};
+  return{...base,k:"sell",label:"Sell",why:pre+`nothing needs it · ${fmt(extra*(it.v||0))} creds`};
+}
+
+/* ---------- where to find ---------- */
+function sources(id){
+  const it=I(id),out={};
+  out.zones=it.f?it.f.split(",").map(s=>s.trim()):[];
+  out.bots=D.bots.filter(b=>b.drops.includes(id));
+  out.from=Object.entries(D.items).map(([k,x])=>({id:k,rc:(x.rc||{})[id]||0,sv:(x.sv||{})[id]||0})).filter(x=>x.rc||x.sv).sort((a,b)=>have(b.id)-have(a.id)||b.rc-a.rc).slice(0,10);
+  out.vendors=it.vd||[];
+  out.trades=D.trades.filter(t=>t.it===id);
+  out.quests=Object.entries(Q).filter(([,q])=>(q.rw||{})[id]).map(([k,q])=>({id:k,n:q.n,q:q.rw[id]}));
+  return out;
+}
+
+function openItem(id){
+  const it=I(id),s=sources(id),v=verdict(id,have(id)),needs=NEEDS[id]||[];
+  $("#dlgImg").src=it.img||"";$("#dlgImg").hidden=!it.img;
+  $("#dlgTitle").textContent=it.n;
+  $("#dlgSub").textContent=[it.t,it.r].filter(Boolean).join(" · ");
+  const sec=(t,b)=>b?`<section class="stack" style="gap:6px"><div class="eyebrow">${t}</div><div>${b}</div></section>`:"";
+  let h=`<div class="row"><span class="pill v-${v.k}">${v.label}</span><span class="mut">${esc(v.why)}</span></div>
+  <div class="row"><label for="dlgQty" class="mut">In my vault</label><input type="number" min="0" id="dlgQty" value="${have(id)}"><span class="mono mut">· value ${fmt(it.v||0)} · stack ${it.st??"–"} · ${it.w??"–"} kg</span></div>`;
+  h+=sec(`Needed in total: ${needTotal(id)}`,needs.length?`<ul class="plain">${needs.map(n=>`<li><span class="mono">${n.q}×</span> ${esc(n.src)} ${n.kind==="qa"||n.kind==="ha"?'<span class="chip map">now</span>':''}</li>`).join("")}</ul>`:"");
+  const where=[];
+  if(s.zones.length)where.push(`<li>Loot it in <b>${esc(s.zones.join(", "))}</b> zones (marked by loot icons on the map).</li>`);
+  s.bots.forEach(b=>where.push(`<li>Dropped by ARC <b>${esc(b.n)}</b> on ${b.maps.map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(" ")}</li>`));
+  s.vendors.forEach(x=>where.push(`<li>Sold by <b>${esc(x.tr)}</b> for ${Object.entries(x.c||{}).map(([k,n])=>`${fmt(n)} ${k==="creds"?"creds":esc(nm(k))}`).join(", ")}</li>`));
+  s.trades.forEach(t=>where.push(`<li>Trade with <b>${esc(t.tr)}</b>: ${t.c.quantity}× ${itemBtn(t.c.itemId)} → ${t.q}×</li>`));
+  s.quests.forEach(q=>where.push(`<li>Reward from quest <b>${esc(q.n)}</b> (${q.q}×)</li>`));
+  if(it.t==="Blueprint")where.push(`<li class="note">The data has no fixed spawn locations for blueprints. They drop at random from containers, more often in high-value areas, during map events (Night Raid, Hurricane and similar) and from bigger ARC.</li>`);
+  h+=sec("Where to get it",where.length?`<ul class="plain">${where.join("")}</ul>`:`<p class="mut">The data lists no specific source.</p>`);
+  if(s.from.length)h+=sec("Get it by recycling or salvaging",`<ul class="plain">${s.from.map(x=>`<li>${thumb(x.id)} ${itemBtn(x.id)} <span class="mono mut">${x.rc?`recycle ${x.rc}×`:""}${x.rc&&x.sv?" · ":""}${x.sv?`salvage ${x.sv}×`:""}</span>${have(x.id)?` <span class="chip map">you have ${have(x.id)}</span>`:""}${I(x.id).f?` <span class="mut">· ${esc(I(x.id).f)}</span>`:""}</li>`).join("")}</ul>`);
+  if(it.rc)h+=sec("Recycles into",Object.entries(it.rc).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
+  if(it.rp)h+=sec("Recipe",Object.entries(it.rp).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
+  if(RECIPE_USE[id])h+=sec(`Used in ${plural(RECIPE_USE[id].length,"recipe")}`,RECIPE_USE[id].slice(0,24).map(k=>itemBtn(k)).join(", "));
+  $("#dlgBody").innerHTML=h;
+  $("#dlgQty").onchange=e=>{setQty(id,+e.target.value);openItem(id)};
+  if(!$("#dlg").open)$("#dlg").showModal();
+}
+$("#dlgClose").onclick=()=>{$("#dlg").close();render()};
+$("#dlg").addEventListener("close",()=>render());
+document.addEventListener("click",e=>{const b=e.target.closest("[data-item]");if(b){e.preventDefault();openItem(b.dataset.item)}});
+function setQty(id,n){n=Math.max(0,Math.floor(n||0));if(n)S.inv[id]=n;else delete S.inv[id];save();computeNeeds()}
+
+/* ---------- views ---------- */
+const V={};
+V.lobby=()=>{
+  const avail=Object.keys(Q).filter(id=>qStatus(id)==="avail");
+  const byMap={};avail.forEach(id=>(Q[id].m||["any"]).forEach(m=>(byMap[m]=byMap[m]||[]).push(id)));
+  const defs=Object.keys(NEEDS).filter(id=>deficit(id)>0);
+  const ranking=Object.keys(MAPN).filter(m=>!m.startsWith("stella_montis_")).map(m=>{
+    const qs=byMap[m]||[];
+    const drops=new Set();D.bots.forEach(b=>{if(b.maps.some(x=>x===m||x.startsWith(m)))b.drops.forEach(d=>{if(defs.includes(d))drops.add(d)})});
+    return{m,qs,drops:[...drops],score:qs.length*3+drops.size};
+  }).sort((a,b)=>b.score-a.score);
+  if(!S.lobbyMap||!ranking.find(r=>r.m===S.lobbyMap))S.lobbyMap=ranking[0].m;
+  const sel=ranking.find(r=>r.m===S.lobbyMap);
+  const anyQ=byMap.any||[];
+  const imgIds=QMAP_TO_IMG[sel.m]||[sel.m];
+  const imgSel=S.lobbyImg&&imgIds.includes(S.lobbyImg)?S.lobbyImg:imgIds[0];
+  const pins=(S.pins[imgSel]||[]);
+  const qOpts=sel.qs.concat(anyQ);
+  return `<div class="stack" style="gap:20px">
+  <div class="stack" style="gap:4px"><div class="eyebrow">Before the raid</div><h1>${sel.qs.length?`${plural(sel.qs.length,"quest")} on ${esc(MAPN[sel.m])}`:"Where to drop"}</h1>
+  <p class="mut" style="margin:0;max-width:65ch">Maps are ranked by how many of your available quests they have. Maps where ARC drop items you're missing get a bonus.${anyQ.length?` ${plural(anyQ.length,"quest")} can be done on any map.`:""}${Object.keys(S.done).length?"":` Start by setting your progress on the Quests tab, or scan your quest log.`}</p></div>
+  <div class="maprank">${ranking.map((r,i)=>`<button class="mapcard ${i===0&&r.score?"best":""}" data-map="${r.m}" aria-pressed="${r.m===sel.m}"><span class="n">${esc(MAPN[r.m])}</span><span class="big">${r.qs.length}</span><span class="mut" style="font-size:12px">quests · ${r.drops.length} missing drops</span></button>`).join("")}</div>
+  <div class="grid2">
+    <div class="panel stack">
+      <h2>Quests on this map</h2>
+      ${sel.qs.length?sel.qs.map(id=>questBlock(id,true)).join(""):`<div class="empty">You have no available quests on this map.</div>`}
+      ${anyQ.length?`<details><summary class="mut" style="cursor:pointer">Quests without a specific map (${anyQ.length})</summary><div class="stack" style="margin-top:10px">${anyQ.map(id=>questBlock(id,true)).join("")}</div></details>`:""}
+      ${sel.drops.length?`<div class="stack" style="gap:6px"><div class="eyebrow">ARC drops on this map that you're missing</div><div class="row">${sel.drops.map(d=>`<span class="chip">${itemBtn(d)} −${deficit(d)}</span>`).join("")}</div></div>`:""}
+    </div>
+    <div class="panel stack">
+      <div class="row" style="justify-content:space-between"><h2>Map</h2>
+        ${imgIds.length>1?`<div class="filters">${imgIds.map(x=>`<button data-img="${x}" aria-pressed="${x===imgSel}">${esc(MAPN[x]||x)}</button>`).join("")}</div>`:""}</div>
+      <div class="row"><label for="pinQ" class="mut" style="font-size:13px">Click the map to circle a spot for</label>
+        <select id="pinQ">${qOpts.map(id=>`<option value="${id}" ${S.pinQ===id?"selected":""}>${esc(Q[id].n)}</option>`).join("")}<option value="" ${S.pinQ===""?"selected":""}>Custom marker</option></select></div>
+      ${MAPIMG[imgSel]?`<div class="mapbox" id="mapbox"><img src="${MAPIMG[imgSel]}" alt="Map of ${esc(MAPN[imgSel]||imgSel)}" draggable="false">${pins.map(p=>`<div class="pin" style="left:${p.x}%;top:${p.y}%;border-color:${p.q?qColor[p.q]:"#fff"}"><span>${esc(p.q?Q[p.q]?.n:p.l||"marker")}</span></div>`).join("")}</div>`:`<div class="empty">No map image available.</div>`}
+      ${pins.length?`<ul class="plain">${pins.map((p,i)=>`<li class="row"><span class="qdot" style="background:${p.q?qColor[p.q]:"#fff"}"></span>${esc(p.q?Q[p.q]?.n:p.l||"marker")} <button class="btn sm" data-unpin="${i}">Remove</button></li>`).join("")}</ul>`:`<p class="note">The community data has the objective text but no coordinates. Circle each spot once and it stays here for later raids.</p>`}
+    </div>
+  </div></div>`;
+};
+function questBlock(id,compact){
+  const q=Q[id],st=qStatus(id);
+  const req=Object.entries(q.req||{});
+  return `<div class="quest">
+   <h3><span class="qdot" style="background:${qColor[id]}"></span>${esc(q.n)} <span class="chip">${esc(q.tr)}</span>${!compact?(q.m||[]).map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(""):""}</h3>
+   <ol class="obj">${q.o.map(o=>`<li>${esc(o)}</li>`).join("")}</ol>
+   ${q.o1?`<div class="note">In a single raid: ${q.o1.map(esc).join("; ")}</div>`:""}
+   ${q.oth?`<div class="note">${q.oth.map(esc).join(", ")}</div>`:""}
+   ${req.length?`<div class="row" style="font-size:13px"><span class="mut">Hand in:</span>${req.map(([it,n])=>`<span class="chip" style="color:${have(it)>=n?"var(--sell)":"var(--warn)"}">${itemBtn(it)} ${Math.min(have(it),n)}/${n}</span>`).join("")}</div>`:""}
+   ${q.rw?`<div class="mut" style="font-size:13px">Reward: ${Object.entries(q.rw).map(([it,n])=>`${n}× ${itemBtn(it)}`).join(", ")}</div>`:""}
+   <div class="row">${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
+   ${!compact&&st!=="done"?`<button class="btn sm" data-doneall="${id}">I'm on this one (mark all before it done)</button>`:""}
+   ${!compact&&q.nx?`<span class="mut" style="font-size:12px">unlocks: ${q.nx.filter(x=>Q[x]).map(x=>esc(Q[x].n)).join(", ")}</span>`:""}</div>
+  </div>`;
+}
+V.quests=()=>{
+  const counts={avail:0,locked:0,done:0};Object.keys(Q).forEach(id=>counts[qStatus(id)]++);
+  const term=(S.qs||"").toLowerCase();
+  const list=Object.keys(Q).filter(id=>(S.qf==="all"||qStatus(id)===S.qf)&&(!term||(Q[id].n+" "+Q[id].tr+" "+Q[id].o.join(" ")).toLowerCase().includes(term))).sort((a,b)=>Q[a].tr.localeCompare(Q[b].tr)||Q[a].n.localeCompare(Q[b].n));
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">Quests · ${counts.done}/${Object.keys(Q).length} done</div><h1>Your progress</h1>
+   <p class="mut" style="margin:0;max-width:65ch">Find the quest you're on in the game and press “I'm on this one”. Everything before it is marked done, so the app knows what's available.</p></div>
+   <div class="row"><div class="filters">${[["avail","Available"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
+   <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
+   <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">Nothing matches this filter.</div>`}</div></div>`;
+};
+V.vault=()=>{
+  const ids=Object.keys(S.inv);
+  const rows=ids.map(id=>({id,c:S.inv[id],v:verdict(id,S.inv[id])}));
+  const cnt={};rows.forEach(r=>cnt[r.v.k]=(cnt[r.v.k]||0)+1);
+  const sellVal=rows.filter(r=>r.v.k==="sell").reduce((a,r)=>a+r.v.extra*(I(r.id).v||0),0);
+  const order={sell:0,recycle:1,learn:2,gear:3,mat:4,keep:5};
+  const shown=rows.filter(r=>S.vf==="all"||r.v.k===S.vf).sort((a,b)=>order[a.v.k]-order[b.v.k]||nm(a.id).localeCompare(nm(b.id)));
+  const F=[["all","All",rows.length],["sell","Sell",cnt.sell],["recycle","Recycle",cnt.recycle],["keep","Keep",cnt.keep],["learn","Blueprints",cnt.learn],["gear","Gear",cnt.gear],["mat","Materials",cnt.mat]];
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">Vault</div><h1>What to sell, what to keep</h1>
+   <p class="mut" style="margin:0;max-width:65ch">Each item shows whether you need it for a quest, a workshop upgrade or a project, or whether you can sell or recycle it.<span class="desk-only"> Press <span class="kbd">F9</span> on a vault page to scan it.</span></p></div>
+   <div class="panel row"><label for="addName" class="mut">Add item</label><input id="addName" list="allItems" placeholder="e.g. Rusted Gear" style="flex:1;min-width:180px"><input id="addQty" type="number" min="1" value="1" aria-label="Quantity"><button class="btn pri" id="addBtn">Add</button>
+   <datalist id="allItems">${Object.entries(D.items).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([,i])=>`<option value="${esc(i.n)}">`).join("")}</datalist></div>
+   ${rows.length?`<div class="sum"><div><span class="eyebrow">Items</span><b>${rows.length}</b></div><div><span class="eyebrow">To sell</span><b class="v-sell">${cnt.sell||0}</b></div><div><span class="eyebrow">To recycle</span><b class="v-recycle">${cnt.recycle||0}</b></div><div><span class="eyebrow">Selling earns</span><b>${fmt(sellVal)}</b></div></div>
+   <div class="filters">${F.map(([k,l,n])=>`<button data-vf="${k}" aria-pressed="${S.vf===k}">${l} ${n||0}</button>`).join("")}</div>
+   <div class="panel tbl"><table><thead><tr><th>Item</th><th class="num">Have</th><th>Verdict</th><th>Why</th><th></th></tr></thead><tbody>
+   ${shown.map(r=>`<tr class="r-${I(r.id).r||""}"><td>${thumb(r.id)} ${itemBtn(r.id)}</td><td class="num"><input type="number" min="0" value="${r.c}" data-qty="${esc(r.id)}" aria-label="Count of ${esc(nm(r.id))}"></td><td><span class="pill v-${r.v.k}">${r.v.label}</span></td><td class="mut" style="font-size:13px">${esc(r.v.why)}</td><td><button class="btn sm" data-del="${esc(r.id)}">Remove</button></td></tr>`).join("")}
+   </tbody></table></div>
+   <div class="row"><button class="btn" id="clearInv">Clear vault</button></div>`
+   :`<div class="empty stack" style="align-items:center">Your vault is empty. Add items above${DESK?", scan a vault page with F9,":""} or load an example vault to see how the verdicts work.<button class="btn pri" id="sampleInv">Load example vault</button></div>`}
+   ${backupPanel()}
+  </div>`;
+};
+function backupPanel(){return `<details class="panel"><summary style="cursor:pointer">Backup and transfer</summary><div class="stack" style="margin-top:10px">
+  <p class="note">Your data is stored only in this browser or app. Copy a backup and paste it somewhere else, for example on another PC.</p>
+  <textarea id="bk" rows="4" style="width:100%;font-family:var(--f-mono);font-size:12px" aria-label="Backup data"></textarea>
+  <div class="row"><button class="btn" id="bkExport">Create backup</button><button class="btn" id="bkCopy">Copy</button><button class="btn" id="bkImport">Restore from backup</button></div></div></details>`}
+V.needs=()=>{
+  const rows=Object.keys(NEEDS).map(id=>({id,n:needTotal(id),h:have(id),d:deficit(id),now:NEEDS[id].some(x=>x.kind==="qa"||x.kind==="ha")})).filter(r=>r.n>0).sort((a,b)=>(b.now-a.now)||(b.d-a.d));
+  const missing=rows.filter(r=>r.d>0);
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">What to bring home</div><h1>Shopping list</h1>
+   <p class="mut" style="margin:0;max-width:65ch">Everything you still need for quests, workshop upgrades and projects, minus what's already in your vault. “Now” means an available quest or the next upgrade.</p></div>
+   <div class="grid2">
+    <div class="panel stack"><h2>Workshop</h2>
+     <div class="kv">${Object.entries(D.hideout).map(([id,h])=>`<dt><label for="h_${id}">${esc(h.n)}</label></dt><dd><select id="h_${id}" data-hide="${id}">${Array.from({length:h.max+1},(_,i)=>`<option value="${i}" ${(S.hide[id]||0)===i?"selected":""}>level ${i}${i===h.max?" (max)":""}</option>`).join("")}</select></dd>`).join("")}</div>
+    </div>
+    <div class="panel stack"><h2>Settings</h2>
+     <label class="row"><input type="checkbox" id="optFuture" ${S.future?"checked":""}> Count items for locked (future) quests</label>
+     <label class="row"><input type="checkbox" id="optProj" ${S.useProj?"checked":""}> Count projects (Trophy Display and others)</label>
+     ${S.useProj?`<div class="kv">${Object.entries(D.projects).map(([id,p])=>`<dt><label for="p_${id}">${esc(p.n)}</label></dt><dd><select id="p_${id}" data-proj="${id}">${Array.from({length:p.ph.length+1},(_,i)=>`<option value="${i}" ${(S.proj[id]||0)===i?"selected":""}>${i===p.ph.length?"complete":`phases done: ${i}`}</option>`).join("")}</select></dd>`).join("")}</div>`:""}
+    </div></div>
+   <div class="sum"><div><span class="eyebrow">Item types missing</span><b class="v-recycle">${missing.length}</b></div><div><span class="eyebrow">Needed now</span><b>${missing.filter(r=>r.now).length}</b></div><div><span class="eyebrow">Covered</span><b class="v-sell">${rows.length-missing.length}</b></div></div>
+   <div class="panel tbl"><table><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Missing</th><th>For</th><th>Where to look</th></tr></thead><tbody>
+   ${rows.map(r=>{const s=sources(r.id);const hint=[s.zones.join(", "),s.bots.slice(0,2).map(b=>b.n).join(", "),s.vendors.length?"trader":""].filter(Boolean).join(" · ");
+   return `<tr class="r-${I(r.id).r||""}"><td>${thumb(r.id)} ${itemBtn(r.id)} ${r.now?'<span class="chip map">now</span>':""}</td><td class="num">${r.n}</td><td class="num">${r.h}</td><td class="num" style="color:${r.d?"var(--warn)":"var(--sell)"}">${r.d||"✓"}</td><td class="mut" style="font-size:13px">${[...new Set(NEEDS[r.id].map(x=>x.src))].slice(0,3).map(esc).join("<br>")}</td><td class="mut" style="font-size:13px">${esc(hint)||"recycling, open the item"}</td></tr>`}).join("")}
+   </tbody></table></div></div>`;
+};
+V.items=()=>{
+  const term=(S.is||"").toLowerCase();const tf=S.it||"";
+  const types=[...new Set(Object.values(D.items).map(i=>i.t))].sort();
+  const list=Object.entries(D.items).filter(([id,i])=>(!tf||i.t===tf)&&(!term||i.n.toLowerCase().includes(term))).sort((a,b)=>a[1].n.localeCompare(b[1].n)).slice(0,200);
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">Database · ${Object.keys(D.items).length} items</div><h1>Where to find it</h1>
+   <p class="mut" style="margin:0;max-width:65ch">Open any item to see which zone types it loots in, which ARC drop it and on which maps, who sells it and what you can recycle into it.</p></div>
+   <div class="row"><input id="is" type="search" placeholder="Search items…" value="${esc(S.is||"")}" style="flex:1;min-width:180px">
+   <select id="it" aria-label="Item type"><option value="">All types</option>${types.map(t=>`<option value="${esc(t)}" ${tf===t?"selected":""}>${esc(t)}</option>`).join("")}</select></div>
+   <div class="panel tbl"><table><thead><tr><th>Item</th><th>Type</th><th>Zones</th><th class="num">Value</th><th class="num">Needed</th></tr></thead><tbody>
+   ${list.map(([id,i])=>`<tr class="r-${i.r||""}"><td>${thumb(id)} ${itemBtn(id)}</td><td class="mut">${esc(i.t)}</td><td class="mut" style="font-size:13px">${esc(i.f||"")}</td><td class="num">${fmt(i.v||0)}</td><td class="num">${needTotal(id)||""}</td></tr>`).join("")}
+   </tbody></table></div></div>`;
+};
+V.scan=()=>{
+  const r=S.scan;
+  let res="";
+  if(r&&r.kind==="quests"){
+    res=`<div class="panel stack"><div class="eyebrow">Last scan · quest log</div><h2>${plural(r.quests.length,"quest")} recognised</h2>
+    ${r.quests.length?`<ul class="plain scanlist">${r.quests.map(q=>`<li class="row"><span>${esc(Q[q.id]?.n||q.id)}</span><span class="conf ${q.score<90?"low":""}">${Math.round(q.score)}% · read “${esc(q.text)}”</span></li>`).join("")}</ul>
+    <p class="note">Applying marks every quest before these as done and these as active.</p>
+    <div class="row"><button class="btn pri" id="applyQuests">Apply to my progress</button><button class="btn" id="dropScan">Discard</button></div>`:`<p class="mut">No quest names found. Open the quest log in the game so the quest titles are visible, then scan again.</p>`}</div>`;
+  }else if(r&&r.kind==="vault"){
+    const tot=r.items.reduce((a,x)=>a+x.count,0);
+    res=`<div class="panel stack"><div class="eyebrow">Last scan · vault ${r.pages>1?`· ${plural(r.pages,"page")}`:""}</div><h2>${plural(r.items.length,"item type")} · ${tot} pieces</h2>
+    <div class="tbl scanlist"><table><thead><tr><th>Item</th><th class="num">Count</th><th class="num">Match</th></tr></thead><tbody>
+    ${r.items.map((x,i)=>`<tr><td>${itemBtn(x.id)}</td><td class="num"><input type="number" min="0" value="${x.count}" data-scancount="${i}" aria-label="Scanned count of ${esc(nm(x.id))}"></td><td class="num conf ${x.score<0.75?"low":""}">${Math.round(x.score*100)}%</td></tr>`).join("")}
+    </tbody></table></div>
+    ${r.unknown?`<p class="note">${plural(r.unknown,"slot")} could not be matched to an item and ${r.unknown===1?"was":"were"} skipped.</p>`:""}
+    <p class="note">Fix any wrong count before applying. Low matches are shown in red.</p>
+    <div class="row"><button class="btn pri" id="applyVaultReplace">Replace my vault with this</button><button class="btn" id="applyVaultAdd">Add to my vault</button><button class="btn" id="dropScan">Discard</button></div></div>`;
+  }
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">Screen scan</div><h1>Read it from the game</h1>
+   <p class="mut" style="margin:0;max-width:65ch">The desktop overlay reads your screen like a screenshot tool. It never touches the game's memory or files and never sends input to the game.</p></div>
+   <div class="panel stack web-only"><h2>Available in the desktop overlay</h2><p class="mut" style="margin:0">Screen scanning needs the Raider Logbook desktop app on Windows. Everything else on this page works in the browser too.</p></div>
+   <div class="panel stack desk-only"><h2>Hotkeys</h2>
+    <div class="kv"><dt><span class="kbd">F8</span></dt><dd>Show or hide the overlay</dd>
+    <dt><span class="kbd">F9</span></dt><dd>Scan the screen. Works on the quest log and on vault pages; the app works out which one it is.</dd>
+    <dt><span class="kbd">Shift</span> + <span class="kbd">F9</span></dt><dd>Start a new vault scan, then scan each vault page with F9</dd></div>
+    <div class="row"><button class="btn pri" id="scanNow">Scan screen now</button><button class="btn" id="scanFile">Scan a screenshot file…</button><button class="btn" id="scanReset">Start new vault scan</button></div>
+    <p class="note">Run the game in borderless windowed mode so the overlay can sit on top of it.</p></div>
+   ${res}</div>`;
+};
+
+/* ---------- scan results ---------- */
+window.onScanResult=r=>{
+  if(!r){return}
+  if(r.error){toast(r.error);return}
+  S.scan=r;S.tab="scan";render();
+  toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?`${plural(r.items.length,"item type")} recognised`:"Nothing recognised");
+};
+function applyQuests(){
+  const ids=S.scan.quests.map(q=>q.id);
+  ids.forEach(id=>{ancestors(id).forEach(a=>S.done[a]=true)});
+  ids.forEach(id=>delete S.done[id]);
+  S.scan=null;S.tab="lobby";render();toast("Quest progress updated");
+}
+function applyVault(replace){
+  if(replace)S.inv={};
+  S.scan.items.forEach(x=>{if(x.count>0)S.inv[x.id]=(replace?0:(S.inv[x.id]||0))+x.count});
+  S.scan=null;api()&&api().reset_vault_session();S.tab="vault";render();toast("Vault updated");
+}
+
+/* ---------- render + events ---------- */
+function render(){
+  computeNeeds();
+  document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===S.tab));
+  const ae=document.activeElement,aid=ae&&ae.id,pos=ae&&ae.selectionStart;
+  $("#main").innerHTML=V[S.tab]();
+  if(aid&&document.getElementById(aid)){const el=document.getElementById(aid);el.focus();try{el.setSelectionRange(pos,pos)}catch(e){}}
+  save();
+}
+const BY_NAME={};Object.entries(D.items).forEach(([id,i])=>BY_NAME[i.n.toLowerCase()]=id);
+document.addEventListener("click",e=>{
+  const t=e.target.closest("button,[data-map]");if(!t)return;const d=t.dataset;
+  if(d.tab){S.tab=d.tab;try{history.replaceState(null,"","#"+d.tab)}catch(_){}render();window.scrollTo(0,0)}
+  else if(d.map){S.lobbyMap=d.map;S.lobbyImg=null;render()}
+  else if(d.img){S.lobbyImg=d.img;render()}
+  else if(d.done){S.done[d.done]=true;render();toast("Quest done")}
+  else if(d.undone){delete S.done[d.undone];render()}
+  else if(d.doneall){ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
+  else if(d.qf){S.qf=d.qf;render()}
+  else if(d.vf){S.vf=d.vf;render()}
+  else if(d.del){setQty(d.del,0);render()}
+  else if(d.unpin!==undefined){const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];S.pins[k].splice(+d.unpin,1);render()}
+  else if(t.id==="addBtn")addItem();
+  else if(t.id==="sampleInv"){Object.assign(S.inv,{rusted_gear:6,metal_parts:40,fabric:12,plastic_parts:30,dusty_film_reel:1,acoustic_guitar:1,advanced_arc_powercell:2,wasp_driver:3,adrenaline_shot:5,shotgun_silencer_blueprint:1,air_freshener:2,cat_bed:1,coffee_pot:1});render();toast("Example vault loaded")}
+  else if(t.id==="clearInv"){if(t.dataset.arm){S.inv={};render()}else{t.dataset.arm=1;t.textContent="Clear everything?"}}
+  else if(t.id==="bkExport"){$("#bk").value=JSON.stringify({inv:S.inv,done:S.done,hide:S.hide,proj:S.proj,useProj:S.useProj,future:S.future,pins:S.pins})}
+  else if(t.id==="bkCopy"){const v=$("#bk").value;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("Copied"),()=>{$("#bk").select()})}
+  else if(t.id==="bkImport"){try{Object.assign(S,JSON.parse($("#bk").value));render();toast("Backup restored")}catch(_){toast("That backup isn't valid JSON")}}
+  else if(t.id==="scanNow"&&api()){toast("Scanning…");api().scan_screen().then(window.onScanResult)}
+  else if(t.id==="scanFile"&&api()){api().scan_file().then(window.onScanResult)}
+  else if(t.id==="scanReset"&&api()){api().reset_vault_session().then(()=>toast("New vault scan started. Scan each vault page with F9."))}
+  else if(t.id==="applyQuests")applyQuests();
+  else if(t.id==="applyVaultReplace")applyVault(true);
+  else if(t.id==="applyVaultAdd")applyVault(false);
+  else if(t.id==="dropScan"){S.scan=null;render()}
+});
+function addItem(){const n=$("#addName").value.trim().toLowerCase();const id=BY_NAME[n]||Object.keys(D.items).find(k=>D.items[k].n.toLowerCase().startsWith(n));
+  if(!n||!id){toast("No item with that name");return}setQty(id,have(id)+Math.max(1,+$("#addQty").value||1));$("#addName").value="";render();$("#addName").focus();toast(`Added ${nm(id)}`)}
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addName")addItem()});
+document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
+  if(d.qty){setQty(d.qty,+t.value);render()}
+  else if(d.scancount!==undefined){S.scan.items[+d.scancount].count=Math.max(0,+t.value||0);save()}
+  else if(d.hide){S.hide[d.hide]=+t.value;render()}
+  else if(d.proj){S.proj[d.proj]=+t.value;render()}
+  else if(t.id==="optFuture"){S.future=t.checked;render()}
+  else if(t.id==="optProj"){S.useProj=t.checked;render()}
+  else if(t.id==="pinQ"){S.pinQ=t.value;save()}
+  else if(t.id==="it"){S.it=t.value;render()}
+});
+document.addEventListener("input",e=>{const t=e.target;
+  if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});
+document.addEventListener("click",e=>{const box=e.target.closest("#mapbox");if(!box)return;
+  const r=box.getBoundingClientRect();const x=((e.clientX-r.left)/r.width*100).toFixed(2),y=((e.clientY-r.top)/r.height*100).toFixed(2);
+  const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];const q=$("#pinQ")?.value||"";
+  (S.pins[k]=S.pins[k]||[]).push({x:+x,y:+y,q,l:q?"":"marker"});render()});
+window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render()});
+const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
+render();
+</script>

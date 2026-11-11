@@ -1,0 +1,7 @@
+data/
+dist/
+release/
+build/
+*.spec
+overlay/assets/
+__pycache__/
