@@ -11,13 +11,18 @@ Run the game in borderless windowed mode so the overlay can sit on top.
 The overlay only takes screenshots. It does not read game memory or files and
 does not send any input to the game.
 
-Usage:  python overlay.py [--monitor N]
+On every launch it rebuilds its data from MetaForge and the ARC Raiders Wiki in the background
+(cached, see update_data) and reloads when done.
+
+Usage:  python overlay.py [--monitor N] [--no-update]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import pathlib
+import shutil
 import sys
 import threading
 import time
@@ -30,11 +35,15 @@ from pynput import keyboard
 
 from scanner import Scanner
 
+FROZEN = hasattr(sys, "_MEIPASS")
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-UI = os.path.join(BASE, "ui", "index.html")
-if not os.path.exists(UI):  # running from the source tree
-    UI = os.path.join(os.path.dirname(BASE), "dist", "index.html")
+ROOT = BASE if FROZEN else os.path.dirname(BASE)          # where build.py, web/ and sources/ live
+sys.path.insert(0, ROOT)
+BUNDLED_UI = os.path.join(BASE, "ui", "index.html") if FROZEN else os.path.join(ROOT, "dist", "index.html")
+BASE_JSON = os.path.join(BASE, "assets", "base.json")
 DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "RaiderLogbook")
+PAGE_DIR = os.path.join(DATA_DIR, "page")
+UI = os.path.join(PAGE_DIR, "index.html")
 
 
 class Api:
@@ -103,6 +112,27 @@ class Api:
         self._visible = not self._visible
 
 
+def update_data(api: Api):
+    """Rebuild the page from fresh MetaForge/wiki data, then reload the window.
+
+    Sources are cached in DATA_DIR/cache and re-downloaded when older than their limit
+    (events 3 h, items and quests 12 h, map markers and wiki 24 h)."""
+    try:
+        import build
+        log = lambda m: print("[update]", m)
+        page = build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR,
+                         assets=False, log=log)
+        api._window.load_url(pathlib.Path(page).resolve().as_uri())
+        time.sleep(1.5)
+        api._window.evaluate_js("toast('Data updated')")
+    except Exception as e:
+        print("[update] failed:", e)
+        try:
+            api._window.evaluate_js(f"toast({json.dumps('Could not update data: ' + str(e)[:120])})")
+        except Exception:
+            pass
+
+
 def start_hotkeys(api: Api):
     def scan():
         threading.Thread(target=lambda: api._push(api.scan_screen()), daemon=True).start()
@@ -120,9 +150,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--monitor", type=int, default=1, help="monitor to scan (1 = primary)")
     ap.add_argument("--width", type=int, default=560)
+    ap.add_argument("--no-update", action="store_true", help="don't download fresh data on start")
     a = ap.parse_args()
 
     api = Api(a.monitor)
+    os.makedirs(PAGE_DIR, exist_ok=True)
+    if not os.path.exists(UI) or os.path.getmtime(BUNDLED_UI) > os.path.getmtime(UI):
+        shutil.copyfile(BUNDLED_UI, UI)               # first run, or the app itself was updated
     with mss.mss() as sct:
         mon = sct.monitors[min(a.monitor, len(sct.monitors) - 1)]
     height = min(1000, mon["height"] - 80)
@@ -130,9 +164,13 @@ def main():
         "Raider Logbook", UI, js_api=api, width=a.width, height=height,
         x=mon["left"] + mon["width"] - a.width - 20, y=mon["top"] + 40,
         on_top=True, resizable=True, background_color="#12161B")
-    os.makedirs(DATA_DIR, exist_ok=True)
     threading.Thread(target=api._scn, daemon=True).start()   # warm up OCR models
-    webview.start(lambda: start_hotkeys(api), private_mode=False, storage_path=DATA_DIR)
+
+    def on_start():
+        start_hotkeys(api)
+        if not a.no_update:
+            threading.Thread(target=update_data, args=(api,), daemon=True).start()
+    webview.start(on_start, private_mode=False, storage_path=DATA_DIR)
 
 
 if __name__ == "__main__":

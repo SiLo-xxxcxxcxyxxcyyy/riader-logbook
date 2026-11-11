@@ -99,6 +99,10 @@ ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .sum b{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums}
 .toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:4px;font-weight:600;z-index:20}
 @media (prefers-reduced-motion:no-preference){.mapcard,.btn{transition:border-color .15s}}
+.grid2.big{grid-template-columns:minmax(0,1fr)}.grid2.big .mappanel{order:-1}
+.steps-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.steps-g figure{margin:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.steps-g img{width:100%;border-radius:4px;border:1px solid var(--line);background:var(--panel2)}
 .tree{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 @media (max-width:760px){.tree{grid-template-columns:minmax(0,1fr)}}
 .sk{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px 0;border-top:1px solid var(--line)}
@@ -134,6 +138,7 @@ body.desk .web-only{display:none}
     <button role="tab" data-tab="items">Items</button>
     <button role="tab" data-tab="skills">Skills</button>
     <button role="tab" data-tab="scan">Scan</button>
+    <button role="tab" data-tab="help">Help</button>
   </nav>
 </div></header>
 
@@ -275,17 +280,17 @@ V.lobby=()=>{
   const qOpts=sel.qs.concat(anyQ);
   return `<div class="stack" style="gap:20px">
   <div class="stack" style="gap:4px"><div class="eyebrow">Before the raid</div><h1>${sel.qs.length?`${plural(sel.qs.length,"quest")} on ${esc(MAPN[sel.m])}`:"Where to drop"}</h1>
-  <p class="mut" style="margin:0;max-width:65ch">Maps are ranked by how many of your available quests they have. Maps where ARC drop items you're missing get a bonus.${anyQ.length?` ${plural(anyQ.length,"quest")} can be done on any map.`:""}${Object.keys(S.done).length?"":` Start by setting your progress on the Quests tab, or scan your quest log.`}</p></div>
+  <p class="mut" style="margin:0;max-width:65ch">Maps are ranked by how many of your available quests they have. Maps where ARC drop items you're missing get a bonus.${anyQ.length?` ${plural(anyQ.length,"quest")} can be done on any map.`:""}${Object.keys(S.done).length?"":` New here? Read <button class="itemlink" data-tab="help">Help</button> first, then set your progress on the Quests tab.`}</p></div>
   ${eventsStrip()}
   <div class="maprank">${ranking.map((r,i)=>`<button class="mapcard ${i===0&&r.score?"best":""}" data-map="${r.m}" aria-pressed="${r.m===sel.m}"><span class="n">${esc(MAPN[r.m])}</span><span class="big">${r.qs.length}</span><span class="mut" style="font-size:12px">quests · ${r.drops.length} missing drops</span>${evNow(r.m).map(e=>`<span class="chip map" style="margin-top:4px;align-self:flex-start">${esc(e.n)}</span>`).join("")}</button>`).join("")}</div>
-  <div class="grid2">
+  <div class="grid2 ${S.bigMap?"big":""}">
     <div class="panel stack">
       <h2>Quests on this map</h2>
       ${sel.qs.length?sel.qs.map(id=>questBlock(id,true)).join(""):`<div class="empty">You have no available quests on this map.</div>`}
       ${anyQ.length?`<details><summary class="mut" style="cursor:pointer">Quests without a specific map (${anyQ.length})</summary><div class="stack" style="margin-top:10px">${anyQ.map(id=>questBlock(id,true)).join("")}</div></details>`:""}
       ${sel.drops.length?`<div class="stack" style="gap:6px"><div class="eyebrow">ARC drops on this map that you're missing</div><div class="row">${sel.drops.map(d=>`<span class="chip">${itemBtn(d)} −${deficit(d)}</span>`).join("")}</div></div>`:""}
     </div>
-    ${mapPanel(sel,qOpts,imgIds,imgSel,pins)}
+    ${mapPanel(sel,qOpts)}
   </div></div>`;
 };
 function questBlock(id,compact){
@@ -298,10 +303,26 @@ function questBlock(id,compact){
    ${q.oth?`<div class="note">${q.oth.map(esc).join(", ")}</div>`:""}
    ${req.length?`<div class="row" style="font-size:13px"><span class="mut">Hand in:</span>${req.map(([it,n])=>`<span class="chip" style="color:${have(it)>=n?"var(--sell)":"var(--warn)"}">${itemBtn(it)} ${Math.min(have(it),n)}/${n}</span>`).join("")}</div>`:""}
    ${q.rw?`<div class="mut" style="font-size:13px">Reward: ${Object.entries(q.rw).map(([it,n])=>`${n}× ${itemBtn(it)}`).join(", ")}</div>`:""}
-   <div class="row">${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
+   ${guideBlock(id)}
+   <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
    ${!compact&&st!=="done"?`<button class="btn sm" data-doneall="${id}">I'm on this one (mark all before it done)</button>`:""}
    ${!compact&&q.nx?`<span class="mut" style="font-size:12px">unlocks: ${q.nx.filter(x=>Q[x]).map(x=>esc(Q[x].n)).join(", ")}</span>`:""}</div>
   </div>`;
+}
+function guideBlock(id){
+  const q=Q[id],g=q.g||{},spots=Object.entries(QMARK[id]||{});
+  const has=g.steps||g.text||g.notes||g.tips||q.wp||q.gu||spots.length;
+  if(!has)return "";
+  const open=(S.gOpen||{})[id];
+  return `<details class="qguide" data-g="${id}" ${open?"open":""}><summary style="cursor:pointer;font-size:13px;font-weight:600">How to do it</summary><div class="stack" style="gap:8px;margin-top:8px;font-size:13px">
+   ${spots.length?`<div><span class="mut">Marked on the map:</span> ${spots.map(([m,p])=>`<b>${esc(MAPN[m]||m)}</b> ${p.filter(x=>x[4]).slice(0,4).map(x=>esc(x[4])).join("; ")||`(${p.length} spot${p.length>1?"s":""})`}`).join(" · ")}</div>`:""}
+   ${g.text?`<div style="white-space:pre-line">${esc(g.text)}</div>`:""}
+   ${g.steps?`<div class="steps-g">${g.steps.map(st=>`<figure>${st.u&&open?`<img src="${esc(st.u)}" alt="" loading="lazy" onerror="this.remove()">`:""}<figcaption>${esc(st.c)}</figcaption></figure>`).join("")}</div>`:""}
+   ${g.tips?`<div class="note" style="white-space:pre-line">${esc(g.tips)}</div>`:""}
+   ${g.notes?`<div class="note" style="white-space:pre-line">${esc(g.notes)}</div>`:""}
+   <div class="row" style="gap:12px">${q.wp?`<a href="${esc(q.wp)}" target="_blank" rel="noopener">Wiki walkthrough${g.steps?" with screenshots":""}</a>`:""}${q.gu?`<a href="${esc(q.gu)}" target="_blank" rel="noopener">MetaForge guide</a>`:""}</div>
+   <div class="mut" style="font-size:11px">Walkthrough text from the ARC Raiders Wiki (CC BY-SA 4.0). Screenshots load in the desktop app; in the browser open the wiki link.</div>
+  </div></details>`;
 }
 V.quests=()=>{
   const counts={avail:0,locked:0,done:0};Object.keys(Q).forEach(id=>counts[qStatus(id)]++);
@@ -482,57 +503,104 @@ function computeRoute(mk,target){
   const last=order[order.length-1],exit=exits.length?nearestName(mk,last.x,last.y,exits):null;
   return{stops:order,exit};
 }
-function mapPanel(sel,qOpts,imgIds,imgSel,pins){
-  const mk=mkFor(sel.m);const mode=mk&&S.mapMode!=="photo"?"tac":"photo";
-  const head=`<div class="row" style="justify-content:space-between"><h2>Map</h2><div class="filters">${mk?`<button data-mapmode="tac" aria-pressed="${mode==="tac"}">Tactical</button>`:""}<button data-mapmode="photo" aria-pressed="${mode==="photo"}">Photo</button></div></div>`;
-  if(mode==="photo")return `<div class="panel stack">${head}
-      ${imgIds.length>1?`<div class="filters">${imgIds.map(x=>`<button data-img="${x}" aria-pressed="${x===imgSel}">${esc(MAPN[x]||x)}</button>`).join("")}</div>`:""}
-      <div class="row"><label for="pinQ" class="mut" style="font-size:13px">Click the map to circle a spot for</label>
-        <select id="pinQ">${qOpts.map(id=>`<option value="${id}" ${S.pinQ===id?"selected":""}>${esc(Q[id].n)}</option>`).join("")}<option value="" ${S.pinQ===""?"selected":""}>Custom marker</option></select></div>
-      ${MAPIMG[imgSel]?`<div class="mapbox" id="mapbox"><img src="${MAPIMG[imgSel]}" alt="Map of ${esc(MAPN[imgSel]||imgSel)}" draggable="false">${pins.map(p=>`<div class="pin" style="left:${p.x}%;top:${p.y}%;border-color:${p.q?qColor[p.q]:"#fff"}"><span>${esc(p.q?Q[p.q]?.n:p.l||"marker")}</span></div>`).join("")}</div>`:`<div class="empty">No map image available.</div>`}
-      ${pins.length?`<ul class="plain">${pins.map((p,i)=>`<li class="row"><span class="qdot" style="background:${p.q?qColor[p.q]:"#fff"}"></span>${esc(p.q?Q[p.q]?.n:p.l||"marker")} <button class="btn sm" data-unpin="${i}">Remove</button></li>`).join("")}</ul>`:`<p class="note">Circle spots yourself on the photo map. The Tactical view marks quest spots automatically.</p>`}</div>`;
+/* marker positions per quest, for "Show on map" */
+const QMARK={};Object.entries(MK).forEach(([m,mk])=>mk.pts.forEach(p=>{const sb=mk.subs[p[2]];if(sb.startsWith("quests:")){const q=sb.slice(7).replace(/-/g,"_");((QMARK[q]=QMARK[q]||{})[m]=QMARK[q][m]||[]).push(p)}}));
+const AL=D.align||{};
+function mapView(m){ // which aligned image + transform to use for a map
+  const ids=m==="stella_montis"?[S.stellaFloor==="lower"?"stella_montis_lower":"stella_montis_upper"]:[m];
+  const id=ids[0],a=AL[id];
+  return a&&MAPIMG[id]?{img:id,a,W:a.w,H:a.h,wx:p=>p[0]*a.s+a.tx,wy:p=>p[1]*a.s+a.ty}:null;
+}
+const IMGC={};
+function mapImage(id){if(!IMGC[id]){const im=new Image();im.onload=()=>drawTactical();im.src=MAPIMG[id];IMGC[id]=im}return IMGC[id]}
+function world(m){const mk=mkFor(m),v=mapView(m);
+  if(v)return{...v,toW:p=>[v.wx(p),v.wy(p)]};
+  const[x0,y0,x1,y1]=mk.box,pad=(x1-x0)*0.04;return{img:null,W:x1-x0+2*pad,H:y1-y0+2*pad,toW:p=>[p[0]-x0+pad,p[1]-y0+pad]};
+}
+function mapPanel(sel,qOpts){
+  const mk=mkFor(sel.m);
+  if(!mk)return `<div class="panel stack"><h2>Map</h2><div class="empty">No map data for this map.</div></div>`;
   const L=S.layers||(S.layers={quests:1,exits:1,keys:1,caches:0,arc:0,nature:0,labels:1});
   const targets=routeTargets(mk);if(!targets.find(t=>t[0]===S.routeT))S.routeT="list";
   const R=computeRoute(mk,S.routeT);window.__route=R;
-  const qm=mk.pts.filter(p=>kindOf(mk.subs[p[2]])==="quest"&&sel.qs.concat(qOpts).includes(mk.subs[p[2]].slice(7).replace(/-/g,"_")));
-  const hasFloors=mk.pts.some(p=>p[6]);
-  return `<div class="panel stack">${head}
+  const showQ=new Set(sel.qs.concat(qOpts));if(S.focusQ)showQ.add(S.focusQ);
+  const qm=mk.pts.filter(p=>kindOf(mk.subs[p[2]])==="quest"&&showQ.has(mk.subs[p[2]].slice(7).replace(/-/g,"_")));
+  const v=mapView(sel.m),Wd=world(sel.m);
+  return `<div class="panel stack mappanel">
+    <div class="row" style="justify-content:space-between"><h2>Map</h2>
+      <div class="row" style="gap:4px"><button class="btn sm" data-zoom="-1" aria-label="Zoom out">−</button><button class="btn sm" data-zoom="1" aria-label="Zoom in">+</button><button class="btn sm" data-zoom="0">Fit</button><button class="btn sm" data-bigmap="1">${S.bigMap?"Smaller":"Bigger"}</button></div></div>
+    ${sel.m==="stella_montis"?`<div class="filters">${[["upper","Upper level"],["lower","Lower level"]].map(([k,l])=>`<button data-stella="${k}" aria-pressed="${(S.stellaFloor||"upper")===k}">${l}</button>`).join("")}</div>`:""}
     <div class="filters">${LAYERS.map(([k,l])=>`<button data-layer="${k}" aria-pressed="${!!L[k]}">${l}</button>`).join("")}</div>
-    ${hasFloors?`<div class="filters"><span class="mut" style="font-size:12px">Floor</span>${[[0,"All"],[1,"1"],[2,"2"]].map(([v,l])=>`<button data-floor="${v}" aria-pressed="${(S.floor||0)===v}">${l}</button>`).join("")}</div>`:""}
-    <div class="row"><label for="routeT" class="mut" style="font-size:13px">Loot route for</label><select id="routeT">${targets.map(([v,l])=>`<option value="${esc(v)}" ${S.routeT===v?"selected":""}>${esc(l)}</option>`).join("")}</select><label class="row" style="font-size:13px"><input type="checkbox" id="showRoute" ${S.showRoute!==false?"checked":""}> show</label></div>
-    <canvas id="tmap" class="mapbox" style="aspect-ratio:1;width:100%;height:auto;display:block" aria-label="Tactical map of ${esc(MAPN[sel.m])}"></canvas>
-    <div class="row" style="font-size:12px;gap:12px" aria-hidden="true"><span><span class="qdot" style="background:var(--accent)"></span> quest spot</span><span style="color:var(--keep)">▲ extract / hatch</span><span style="color:var(--gear)">■ key room</span><span style="color:var(--recycle)">◆ cache</span><span style="color:var(--sell)">• nature</span><span style="color:var(--warn)">• ARC</span><span class="mut">· other loot</span></div>
-    ${qm.length?`<div class="stack" style="gap:4px"><div class="eyebrow">Quest spots on this map (${qm.length})</div><ul class="plain" style="font-size:13px">${qm.slice(0,12).map(p=>{const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");return `<li class="row"><span class="qdot" style="background:${qColor[qid]}"></span><b>${esc(Q[qid]?.n||qid)}</b><span class="mut">${esc(p[4]||"")}</span></li>`}).join("")}</ul></div>`:sel.qs.length?`<p class="note">MetaForge has no marked spots yet for your quests on this map.</p>`:""}
+    <div class="row"><label for="routeT" class="mut" style="font-size:13px">Loot route for</label><select id="routeT">${targets.map(([val,l])=>`<option value="${esc(val)}" ${S.routeT===val?"selected":""}>${esc(l)}</option>`).join("")}</select><label class="row" style="font-size:13px"><input type="checkbox" id="showRoute" ${S.showRoute!==false?"checked":""}> show</label></div>
+    ${S.focusQ&&Q[S.focusQ]?`<div class="row note" style="justify-content:space-between"><span>Showing <b>${esc(Q[S.focusQ].n)}</b></span><button class="btn sm" data-unfocus="1">Clear</button></div>`:""}
+    <canvas id="tmap" class="mapbox" style="aspect-ratio:${Wd.W}/${Wd.H};width:100%;height:auto;display:block;touch-action:none;cursor:grab" aria-label="Map of ${esc(MAPN[sel.m])}"></canvas>
+    <div class="row" style="font-size:12px;gap:12px" aria-hidden="true"><span><span class="qdot" style="background:var(--accent)"></span> quest spot</span><span style="color:var(--keep)">▲ extract / hatch</span><span style="color:var(--gear)">■ key room</span><span style="color:var(--recycle)">◆ cache</span><span style="color:var(--sell)">• nature</span><span style="color:var(--warn)">• ARC</span><span class="mut">Scroll or pinch to zoom, drag to move, click to drop or remove your own marker.</span></div>
+    ${qm.length?`<div class="stack" style="gap:4px"><div class="eyebrow">Quest spots on this map (${qm.length})</div><ul class="plain" style="font-size:13px">${qm.slice(0,14).map(p=>{const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");return `<li class="row"><span class="qdot" style="background:${qColor[qid]}"></span><b>${esc(Q[qid]?.n||qid)}</b><span class="mut">${esc(p[4]||"")}</span></li>`}).join("")}</ul></div>`:sel.qs.length?`<p class="note">MetaForge has no marked spots yet for your quests on this map. Open a quest's “How to do it” for the wiki walkthrough.</p>`:""}
     ${R?`<div class="stack" style="gap:4px"><div class="eyebrow">Suggested loot route</div><ol class="obj" style="font-size:13px">${R.stops.map(c=>`<li><b>${c.near?`Near ${esc(c.near[4])}`:"Open area"}</b> <span class="mut">· ${Object.entries(c.subs).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,n])=>`${n} ${esc(SUB_LABEL[k]||(NATURE_ITEM[k]?nm(NATURE_ITEM[k]):k.replace(/[_-]/g," ")))}`).join(", ")}</span></li>`).join("")}${R.exit?`<li><b>Extract at ${esc(R.exit[4])}</b> <span class="mut">· nearest to the last stop</span></li>`:""}</ol>
-      <p class="note">Stops are the densest clusters of matching spawn spots from MetaForge's map data, ordered by distance. Spawn spots are chances, and each raid's loot zones change, so check the in-game map at drop.</p></div>`:`<p class="note">No matching spawn spots on this map for that target.</p>`}
-    <p class="mut" style="font-size:12px;margin:0">Map drawn from <a href="https://metaforge.app/arc-raiders" target="_blank" rel="noopener" class="mut">MetaForge</a> community markers (${fmt(mk.pts.length)} spots). It is a schematic, not the game's map art.</p>
+      <p class="note">Stops are the densest clusters of matching spawn spots, ordered by distance. Spawn spots are chances, and loot zones change every raid, so check the in-game map at drop.</p></div>`:`<p class="note">No matching spawn spots on this map for that target.</p>`}
+    <p class="mut" style="font-size:12px;margin:0">${v?`Map image by Cartotect via the <a href="${esc(v.a.src)}" target="_blank" rel="noopener" class="mut">ARC Raiders Wiki</a>, markers lined up automatically (about ±1–2% off). `:`No labelled map image to line up with yet, so this is drawn from the markers alone. `}Markers from <a href="https://metaforge.app/arc-raiders" target="_blank" rel="noopener" class="mut">MetaForge</a> (${fmt(mk.pts.length)} spots).</p>
   </div>`;
 }
+function viewOf(m){S.view=S.view||{};const k=m+(m==="stella_montis"?":"+(S.stellaFloor||"upper"):"");return S.view[k]||(S.view[k]={z:1,cx:null,cy:null})}
 function drawTactical(){
-  const cv=$("#tmap");if(!cv)return;const mk=mkFor(S.lobbyMap);if(!mk)return;
+  const cv=$("#tmap");if(!cv)return;const m=S.lobbyMap,mk=mkFor(m);if(!mk)return;
   const css=getComputedStyle(document.documentElement),col=v=>css.getPropertyValue(v).trim();
-  const W=cv.clientWidth,dpr=window.devicePixelRatio||1;cv.width=W*dpr;cv.height=W*dpr;
-  const g=cv.getContext("2d");g.scale(dpr,dpr);g.fillStyle=col("--panel2");g.fillRect(0,0,W,W);
-  const[x0,y0,x1,y1]=mk.box,pad=14,sc=(W-2*pad)/Math.max(x1-x0,y1-y0),ox=pad+((W-2*pad)-(x1-x0)*sc)/2,oy=pad+((W-2*pad)-(y1-y0)*sc)/2;
-  const X=x=>ox+(x-x0)*sc,Y=y=>oy+(y-y0)*sc;window.__tx={X,Y,x0,y0,sc,ox,oy};
-  const L=S.layers||{},avail=new Set(Object.keys(Q).filter(id=>qStatus(id)==="avail"));
+  const Wd=world(m),W=cv.clientWidth,H=Math.round(W*Wd.H/Wd.W),dpr=window.devicePixelRatio||1;
+  cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext("2d");g.scale(dpr,dpr);
+  const vw=viewOf(m);if(vw.cx==null){vw.cx=Wd.W/2;vw.cy=Wd.H/2}
+  const fit=W/Wd.W,sc=fit*vw.z,X=wx=>W/2+(wx-vw.cx)*sc,Y=wy=>H/2+(wy-vw.cy)*sc;
+  window.__tx={sc,W,H,vw,Wd,fit};
+  g.fillStyle=col("--panel2");g.fillRect(0,0,W,H);
+  if(Wd.img){const im=mapImage(Wd.img);if(im.complete&&im.naturalWidth)g.drawImage(im,X(0),Y(0),Wd.W*sc,Wd.H*sc)}
+  const L=S.layers||{},avail=new Set(Object.keys(Q).filter(id=>qStatus(id)==="avail"));if(S.focusQ)avail.add(S.focusQ);
   const pts=mk.pts.filter(p=>!(S.floor&&p[6]&&p[6]!==S.floor));
+  const P=pts.map(p=>{const[a,b]=Wd.toW(p);return[X(a),Y(b)]});
   const kinds=pts.map(p=>kindOf(mk.subs[p[2]]));
-  g.fillStyle=col("--mut");g.globalAlpha=.45;pts.forEach((p,i)=>{if(kinds[i]==="loot"||kinds[i]==="other")g.fillRect(X(p[0])-1,Y(p[1])-1,2,2)});g.globalAlpha=1;
-  const dot=(p,c,r)=>{g.fillStyle=c;g.beginPath();g.arc(X(p[0]),Y(p[1]),r,0,7);g.fill()};
-  if(L.nature)pts.forEach((p,i)=>kinds[i]==="nature"&&dot(p,col("--sell"),1.6));
-  if(L.arc)pts.forEach((p,i)=>kinds[i]==="arc"&&dot(p,col("--warn"),1.8));
-  if(L.caches)pts.forEach((p,i)=>{if(kinds[i]!=="cache")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--recycle");g.beginPath();g.moveTo(x,y-3.5);g.lineTo(x+3.5,y);g.lineTo(x,y+3.5);g.lineTo(x-3.5,y);g.fill()});
-  g.font="11px "+col("--f-body");g.textBaseline="middle";
-  const label=(t,x,y,c)=>{if(!L.labels||!t)return;const w=g.measureText(t).width,lx=x+6+w>W-4?x-6-w:x+6;g.lineWidth=3;g.strokeStyle=col("--panel2");g.strokeText(t,lx,y);g.fillStyle=c;g.fillText(t,lx,y)};
-  if(L.keys)pts.forEach((p,i)=>{if(kinds[i]!=="key")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--gear");g.fillRect(x-3,y-3,6,6);label(p[4],x,y,col("--gear"))});
-  if(L.exits)pts.forEach((p,i)=>{if(kinds[i]!=="exit")return;const x=X(p[0]),y=Y(p[1]);g.fillStyle=col("--keep");g.beginPath();g.moveTo(x,y-4.5);g.lineTo(x+4,y+3);g.lineTo(x-4,y+3);g.fill();label(p[4],x,y,col("--keep"))});
+  const r0=Math.min(2.5,Math.max(1,sc*3));
+  if(!Wd.img){g.fillStyle=col("--mut");g.globalAlpha=.45;pts.forEach((p,i)=>{if(kinds[i]==="loot"||kinds[i]==="other")g.fillRect(P[i][0]-1,P[i][1]-1,2,2)});g.globalAlpha=1}
+  else if(vw.z>=2.5){g.fillStyle="rgba(255,255,255,.55)";pts.forEach((p,i)=>{if(kinds[i]==="loot")g.fillRect(P[i][0]-1,P[i][1]-1,2,2)})}
+  const dot=(i,c,r)=>{g.fillStyle=c;g.beginPath();g.arc(P[i][0],P[i][1],r,0,7);g.fill()};
+  const halo=()=>{g.lineWidth=1.5;g.strokeStyle="rgba(0,0,0,.7)"};
+  if(L.nature)pts.forEach((p,i)=>{if(kinds[i]==="nature"){dot(i,col("--sell"),r0+.6);halo();g.stroke()}});
+  if(L.arc)pts.forEach((p,i)=>{if(kinds[i]==="arc"){dot(i,col("--warn"),r0+.8);halo();g.stroke()}});
+  if(L.caches)pts.forEach((p,i)=>{if(kinds[i]!=="cache")return;const[x,y]=P[i];g.fillStyle=col("--recycle");g.beginPath();g.moveTo(x,y-4);g.lineTo(x+4,y);g.lineTo(x,y+4);g.lineTo(x-4,y);g.closePath();g.fill();halo();g.stroke()});
+  g.font="12px "+col("--f-body");g.textBaseline="middle";
+  const label=(t,x,y,c)=>{if(!L.labels||!t)return;const w=g.measureText(t).width,lx=Math.max(4,x+7+w>W-4?x-7-w:x+7);g.lineWidth=3.5;g.strokeStyle="rgba(10,12,16,.85)";g.strokeText(t,lx,y);g.fillStyle=c;g.fillText(t,lx,y)};
+  const light=c=>c; // colours are readable on the dark map art
+  if(L.keys)pts.forEach((p,i)=>{if(kinds[i]!=="key")return;const[x,y]=P[i];g.fillStyle=col("--gear");g.fillRect(x-4,y-4,8,8);halo();g.strokeRect(x-4,y-4,8,8);if(vw.z>=1.5||!Wd.img)label(p[4],x,y,"#d9c8ff")});
+  if(L.exits)pts.forEach((p,i)=>{if(kinds[i]!=="exit")return;const[x,y]=P[i];g.fillStyle=col("--keep");g.beginPath();g.moveTo(x,y-5.5);g.lineTo(x+5,y+3.5);g.lineTo(x-5,y+3.5);g.closePath();g.fill();halo();g.stroke();if(vw.z>=1.5||!Wd.img)label(p[4],x,y,"#bfe3ff")});
   const R=window.__route;
-  if(R&&S.showRoute!==false){g.strokeStyle=col("--accent");g.lineWidth=2;g.setLineDash([5,4]);g.beginPath();R.stops.forEach((c,i)=>i?g.lineTo(X(c.x),Y(c.y)):g.moveTo(X(c.x),Y(c.y)));if(R.exit)g.lineTo(X(R.exit[0]),Y(R.exit[1]));g.stroke();g.setLineDash([]);
-    R.stops.forEach((c,i)=>{const x=X(c.x),y=Y(c.y);g.fillStyle=col("--accent");g.beginPath();g.arc(x,y,9,0,7);g.fill();g.fillStyle=col("--accent-ink");g.font="bold 11px "+col("--f-mono");g.textAlign="center";g.fillText(i+1,x,y+.5);g.textAlign="left"});g.font="11px "+col("--f-body")}
-  if(L.quests)pts.forEach((p,i)=>{if(kinds[i]!=="quest")return;const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");if(!avail.has(qid))return;const x=X(p[0]),y=Y(p[1]);g.strokeStyle=qColor[qid]||col("--accent");g.lineWidth=3;g.beginPath();g.arc(x,y,9,0,7);g.stroke();label(Q[qid]?.n,x+4,y,col("--fg"))});
-  (S.tpins?.[S.lobbyMap]||[]).forEach(p=>{const x=X(p.x),y=Y(p.y);g.strokeStyle=col("--fg");g.lineWidth=2;g.beginPath();g.arc(x,y,8,0,7);g.stroke();label(p.l||"marker",x+3,y,col("--fg"))});
+  if(R&&S.showRoute!==false){const RP=c=>{const[a,b]=Wd.toW([c.x,c.y]);return[X(a),Y(b)]};
+    g.strokeStyle=col("--accent");g.lineWidth=2.5;g.setLineDash([6,5]);g.beginPath();R.stops.forEach((c,i)=>{const[x,y]=RP(c);i?g.lineTo(x,y):g.moveTo(x,y)});if(R.exit){const[x,y]=RP({x:R.exit[0],y:R.exit[1]});g.lineTo(x,y)}g.stroke();g.setLineDash([]);
+    R.stops.forEach((c,i)=>{const[x,y]=RP(c);g.fillStyle=col("--accent");g.beginPath();g.arc(x,y,10,0,7);g.fill();g.fillStyle=col("--accent-ink");g.font="bold 12px "+col("--f-mono");g.textAlign="center";g.fillText(i+1,x,y+.5);g.textAlign="left"});g.font="12px "+col("--f-body")}
+  if(L.quests)pts.forEach((p,i)=>{if(kinds[i]!=="quest")return;const qid=mk.subs[p[2]].slice(7).replace(/-/g,"_");if(!avail.has(qid))return;const[x,y]=P[i],f=qid===S.focusQ;
+    g.strokeStyle="rgba(0,0,0,.75)";g.lineWidth=f?7:6;g.beginPath();g.arc(x,y,f?14:10,0,7);g.stroke();g.strokeStyle=qColor[qid]||col("--accent");g.lineWidth=f?4:3;g.stroke();label(f&&p[4]?`${Q[qid]?.n}: ${p[4]}`:Q[qid]?.n,x+5,y,"#fff")});
+  (S.tpins?.[m]||[]).forEach(p=>{const[a,b]=Wd.toW([p.x,p.y]);const x=X(a),y=Y(b);g.strokeStyle="#fff";g.lineWidth=2.5;g.beginPath();g.arc(x,y,9,0,7);g.stroke();label(p.l||"marker",x+3,y,"#fff")});
 }
+/* pan / zoom / click */
+(()=>{let drag=null;
+  const zoomAt=(f,cx,cy)=>{const T=window.__tx;if(!T)return;const vw=T.vw;const wx=vw.cx+(cx-T.W/2)/T.sc,wy=vw.cy+(cy-T.H/2)/T.sc;vw.z=Math.min(12,Math.max(1,vw.z*f));const sc=T.fit*vw.z;vw.cx=wx-(cx-T.W/2)/sc;vw.cy=wy-(cy-T.H/2)/sc;clampV();drawTactical();save()};
+  const clampV=()=>{const T=window.__tx;if(!T)return;const vw=T.vw,hw=T.W/2/(T.fit*vw.z),hh=T.H/2/(T.fit*vw.z);vw.cx=Math.min(Math.max(vw.cx,hw),T.Wd.W-hw);vw.cy=Math.min(Math.max(vw.cy,hh),T.Wd.H-hh)};
+  window.__zoom=(d)=>{const T=window.__tx;if(!T)return;if(d===0){T.vw.z=1;T.vw.cx=T.Wd.W/2;T.vw.cy=T.Wd.H/2;drawTactical();save();return}zoomAt(d>0?1.6:1/1.6,T.W/2,T.H/2)};
+  window.__focus=(pts,m)=>{const v=viewOf(m),Wd=world(m),ws=pts.map(p=>Wd.toW(p));const xs=ws.map(w=>w[0]),ys=ws.map(w=>w[1]);
+    const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);v.cx=(x0+x1)/2;v.cy=(y0+y1)/2;v.z=Math.min(6,Math.max(1.5,0.6*Math.min(Wd.W/Math.max(x1-x0,1),Wd.H/Math.max(y1-y0,1))))};
+  document.addEventListener("wheel",e=>{if(e.target.id!=="tmap")return;e.preventDefault();const r=e.target.getBoundingClientRect();zoomAt(e.deltaY<0?1.25:0.8,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+  const ptrs=new Map();
+  document.addEventListener("pointerdown",e=>{if(e.target.id!=="tmap")return;e.target.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);const T=window.__tx;drag={x:e.clientX,y:e.clientY,cx:T.vw.cx,cy:T.vw.cy,moved:0,pinch:ptrs.size===2?null:undefined}});
+  document.addEventListener("pointermove",e=>{if(!drag||e.target.id!=="tmap")return;const T=window.__tx;
+    if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+    if(ptrs.size===2){const[a,b]=[...ptrs.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(drag.pinch){const r=e.target.getBoundingClientRect();zoomAt(d/drag.pinch,(a[0]+b[0])/2-r.left,(a[1]+b[1])/2-r.top)}drag.pinch=d;drag.moved=99;return}
+    const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));if(drag.moved<4)return;
+    T.vw.cx=drag.cx-dx/T.sc;T.vw.cy=drag.cy-dy/T.sc;clampV();drawTactical()});
+  document.addEventListener("pointerup",e=>{ptrs.delete(e.pointerId);if(!drag||e.target.id!=="tmap"){drag=null;return}const moved=drag.moved;drag=null;save();if(moved>=4)return;
+    const T=window.__tx,r=e.target.getBoundingClientRect(),cx=e.clientX-r.left,cy=e.clientY-r.top,m=S.lobbyMap,Wd=world(m);
+    const wx=T.vw.cx+(cx-T.W/2)/T.sc,wy=T.vw.cy+(cy-T.H/2)/T.sc;
+    // world -> marker coords (inverse of toW)
+    const v=mapView(m);let mx,my;if(v){mx=(wx-v.a.tx)/v.a.s;my=(wy-v.a.ty)/v.a.s}else{const[x0,y0,x1]=mkFor(m).box,pad=(x1-x0)*0.04;mx=wx+x0-pad;my=wy+y0-pad}
+    S.tpins=S.tpins||{};const list=S.tpins[m]=S.tpins[m]||[];
+    const hit=list.findIndex(p=>{const[a,b]=Wd.toW([p.x,p.y]);return Math.hypot(T.W/2+(a-T.vw.cx)*T.sc-cx,T.H/2+(b-T.vw.cy)*T.sc-cy)<12});
+    if(hit>=0)list.splice(hit,1);else list.push({x:Math.round(mx),y:Math.round(my),l:"marker"});drawTactical();save()});
+})();
 
 /* ---------- skills ---------- */
 const SK={};(D.skills||[]).forEach(s=>SK[s.n]=s);
@@ -565,6 +633,52 @@ V.skills=()=>{
     ${b.phases.map((ph,pi)=>`<div class="stack" style="gap:4px"><div class="eyebrow" style="color:${pi===curPhase?"var(--accent)":""}">Points ${ph.from}–${ph.to} · ${esc(ph.n)}</div><ol class="steps">${ph.steps.map(([n,to])=>{const reached=(now[n]||0)>=to;return `<li class="${reached?"done":""}"><span class="mono">${esc(n)} → ${to}/${SK[n]?.max??"?"}</span></li>`}).join("")}</ol></div>`).join("")}
    </div></details>
    <p class="note">Build order from <a href="https://arcraidershub.com/guides/recommended-skill-tree-guide" target="_blank" rel="noopener">Arc Raiders Hub's skill guide</a> (based on Millzaa's in-raid tests). Skill descriptions from the <a href="https://arcraiders.wiki/wiki/Skills" target="_blank" rel="noopener">ARC Raiders Wiki</a>, CC BY-SA 4.0. Skills are listed per branch, not drawn as the in-game tree.</p>
+  </div>`;
+};
+
+
+/* ---------- help ---------- */
+V.help=()=>{
+  const sec=(id,t,body)=>`<section class="panel stack" id="h-${id}" style="gap:8px"><h2>${t}</h2>${body}</section>`;
+  const steps=(l)=>`<ol class="obj" style="display:flex;flex-direction:column;gap:6px">${l.map(x=>`<li>${x}</li>`).join("")}</ol>`;
+  const go=(tab,l)=>`<button class="itemlink" data-tab="${tab}">${l}</button>`;
+  return `<div class="stack" style="gap:16px;max-width:820px">
+  <div class="stack" style="gap:4px"><div class="eyebrow">Help</div><h1>How to use Raider Logbook</h1>
+  <p class="mut" style="margin:0;max-width:65ch">Raider Logbook tracks your quests, vault and skill points, and tells you where to drop, what to loot and what to sell. Five minutes of setup, then it mostly runs itself.</p></div>
+  ${sec("start","Getting started",steps([
+    `<b>Set your quest progress.</b> Open ${go("quests","Quests")}, find the quest you're on in the game and press <i>I'm on this one</i>. Everything before it is marked done. In the desktop app you can instead open the quest log in game and press <span class="kbd">F9</span>.`,
+    `<b>Set your workshop levels.</b> On ${go("needs","Shopping list")}, pick the level of each bench and station. That's what tells the app which materials you still need.`,
+    `<b>Fill in your vault.</b> On ${go("vault","Vault")}, add items by name, or in the desktop app press <span class="kbd">Shift</span>+<span class="kbd">F9</span> and then <span class="kbd">F9</span> on each vault page.`,
+    `<b>Before each raid, open ${go("lobby","Lobby")}.</b> It shows which map has most of your quests, what events are on, where your quest spots are and a loot route for what you're missing.`]))}
+  ${sec("lobby","Lobby and the map",`<ul class="plain" style="gap:6px">
+    <li><b>Map cards</b> rank maps by your available quests, with a bonus for ARC drops you still need. Event chips show what's running on each map now.</li>
+    <li><b>Quest spots</b> are circled automatically in each quest's colour. Use <i>Show on map</i> on any quest to jump straight to its spots.</li>
+    <li><b>Layers</b> switch extracts and hatches, key rooms, caches, ARC and nature spawns on or off. <i>Labels</i> names them once you zoom in.</li>
+    <li><b>Loot route</b> picks the six densest clusters of spawn spots for what you choose (your shopping list, one nature item, caches, probes, lockers or a loot type), connects them by distance and ends at the nearest extract.</li>
+    <li><b>Moving around:</b> scroll or pinch to zoom, drag to pan, <i>Fit</i> to reset, <i>Bigger</i> for a full-width map. Click to drop your own marker, click it again to remove it.</li></ul>`)}
+  ${sec("vault","Vault verdicts",`<ul class="plain" style="gap:6px">
+    <li><span class="pill v-keep">Keep</span> needed for a quest, workshop upgrade or project you haven't done, or marked <i>I use this</i>.</li>
+    <li><span class="pill v-recycle">Recycle</span> recycling gives materials you're short of.</li>
+    <li><span class="pill v-sell">Sell</span> nothing you track needs it. The total sell value is shown at the top.</li>
+    <li><span class="pill v-learn">Learn</span> a blueprint: learn it, then sell copies. <span class="pill v-gear">Gear</span> weapons and gear: sell them unless you use them. Open the item and tick <i>I use this in my loadout</i>.</li>
+    <li><span class="pill v-mat">Material</span> crafting materials: keep a sensible stock.</li></ul>
+    <p class="note">Verdicts follow your quest progress and workshop levels, so keep those up to date. Turn on <i>Count projects</i> on the Shopping list if you're working on projects.</p>`)}
+  ${sec("quests","Quests",`<p style="margin:0">Each quest shows its objectives, what to hand in (green when you have it), rewards and <b>How to do it</b>: where it's marked on the map, the wiki walkthrough with screenshots, and links to the full guides. Locked quests become available as you finish the ones before them.</p>`)}
+  ${sec("items","Items and the shopping list",`<p style="margin:0">${go("needs","Shopping list")} adds up everything you still need and shows where to look. Open any item for its loot zones, ARC that drop it, traders, trades, what recycles into it, MetaForge farming tips, spawn counts per map for nature items (click a map to see the route) and related guides.</p>`)}
+  ${sec("skills","Skills",`<p style="margin:0">Pick a playstyle on ${go("skills","Skills")} and set how many skill points you have. The next five points are listed with what they do. <i>Full order</i> lists every point from 1 to 91: 76 from levelling and up to 15 from expeditions.</p>`)}
+  ${sec("desktop","Desktop overlay (Windows)",`<ul class="plain" style="gap:6px">
+    <li><span class="kbd">F8</span> show or hide the overlay. <span class="kbd">F9</span> scan the screen (quest log or vault page). <span class="kbd">Shift</span>+<span class="kbd">F9</span> start a new vault scan.</li>
+    <li>Run the game in <b>borderless windowed</b> mode so the overlay can stay on top.</li>
+    <li>The scanner only takes screenshots. It never reads game memory or files and never sends input to the game.</li>
+    <li>Check a scan before applying it: low-confidence matches are shown in red, and you can fix counts by hand.</li>
+    <li><b>Updates:</b> on every launch the app downloads fresh data (items, quests, map markers, events) in the background and reloads when it's done. The footer shows when the data was last updated.</li></ul>`)}
+  ${sec("data","Your data",`<p style="margin:0">Progress is saved in this browser or app only. To move it, use <i>Backup and transfer</i> at the bottom of the ${go("vault","Vault")} tab: create a backup, copy it, and restore it on the other device.</p>`)}
+  ${sec("limits","Good to know",`<ul class="plain" style="gap:6px">
+    <li>Map markers and quest spots are community data from MetaForge. Not every quest has spots yet, and spawn spots are chances, not guarantees.</li>
+    <li>Riven Tides and Pendola Pass have no labelled map to line the markers up with yet, so they're drawn from the markers alone.</li>
+    <li>Recipes, recycling and ARC drops for Frozen Trail items are still missing from the open data.</li>
+    <li>The browser version can't update itself. Rebuild it to refresh the data, or use the desktop app.</li>
+    <li>Not affiliated with Embark Studios. Data sources are listed at the bottom of every page.</li></ul>`)}
   </div>`;
 };
 
@@ -608,7 +722,11 @@ document.addEventListener("click",e=>{
   else if(d.doneall){ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}
   else if(d.build){S.build=d.build;render()}
-  else if(d.mapmode){S.mapMode=d.mapmode;render()}
+  else if(d.zoom!==undefined)window.__zoom(+d.zoom)
+  else if(d.bigmap){S.bigMap=!S.bigMap;render()}
+  else if(d.stella){S.stellaFloor=d.stella;render()}
+  else if(d.unfocus){S.focusQ=null;render()}
+  else if(d.showq){const q=d.showq,mm=QMARK[q]||{},m=Object.keys(mm).sort((a,b)=>mm[b].length-mm[a].length)[0];if(!m)return;S.focusQ=q;S.lobbyMap=m;S.tab="lobby";S.layers=S.layers||{};S.layers.quests=1;window.__focus(mm[m],m);render();window.scrollTo(0,0)}
   else if(d.layer){S.layers[d.layer]=S.layers[d.layer]?0:1;render()}
   else if(d.floor!==undefined){S.floor=+d.floor;render()}
   else if(d.showmap){S.lobbyMap=d.showmap;S.routeT=d.route;S.mapMode="tac";S.tab="lobby";$("#dlg").close();render()}
@@ -650,18 +768,14 @@ document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
 document.addEventListener("input",e=>{const t=e.target;
   if(t.id==="skPts"){const n=$("#skPtsN");if(n)n.value=t.value}
   else if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});
-document.addEventListener("click",e=>{if(e.target.id!=="tmap"||!window.__tx)return;const r=e.target.getBoundingClientRect(),T=window.__tx;
-  const x=Math.round(T.x0+((e.clientX-r.left)-T.ox)/T.sc),y=Math.round(T.y0+((e.clientY-r.top)-T.oy)/T.sc);
-  S.tpins=S.tpins||{};const list=S.tpins[S.lobbyMap]=S.tpins[S.lobbyMap]||[];
-  const hit=list.findIndex(p=>Math.hypot(T.ox+(p.x-T.x0)*T.sc-(e.clientX-r.left),T.oy+(p.y-T.y0)*T.sc-(e.clientY-r.top))<10);
-  if(hit>=0)list.splice(hit,1);else list.push({x,y,l:"marker"});render()});
 window.addEventListener("resize",()=>drawTactical());
 document.addEventListener("click",e=>{const box=e.target.closest("#mapbox");if(!box)return;
   const r=box.getBoundingClientRect();const x=((e.clientX-r.left)/r.width*100).toFixed(2),y=((e.clientY-r.top)/r.height*100).toFixed(2);
   const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];const q=$("#pinQ")?.value||"";
   (S.pins[k]=S.pins[k]||[]).push({x:+x,y:+y,q,l:q?"":"marker"});render()});
-document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=e.target.open;save()}},true);
-{const m=D.meta;if(m)$("#foot").innerHTML=`Data built ${esc(m.built)} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
+document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=e.target.open;save()}
+  const gid=e.target.dataset&&e.target.dataset.g;if(gid){S.gOpen=S.gOpen||{};const was=!!S.gOpen[gid];if(e.target.open)S.gOpen[gid]=1;else delete S.gOpen[gid];save();if(e.target.open&&!was)render()}},true);
+{const m=D.meta;if(m)$("#foot").innerHTML=`Data updated ${esc(new Date(m.built).toLocaleString())} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
 window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render()});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
