@@ -37,6 +37,12 @@ python build.py data/arcraiders-data
 python overlay/overlay.py
 ```
 
+### Windows blocks the app after download
+If the app shows `Failed to resolve Python.Runtime.Loader.Initialize`, Windows has blocked the files extracted from the downloaded zip. Recent builds fix this themselves on launch; for older ones run this in PowerShell in the app folder:
+```
+Get-ChildItem -Recurse | Unblock-File
+```
+
 ### Build the .exe
 Run `build_windows.bat`. The app lands in `release\RaiderLogbook\RaiderLogbook.exe`.
 The GitHub Actions workflow `.github/workflows/build-windows.yml` does the same in the cloud and uploads the build as an artifact.

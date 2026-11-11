@@ -27,6 +27,26 @@ import sys
 import threading
 import time
 
+
+
+def _unblock_downloaded_files():
+    """Remove Windows' "downloaded from the internet" mark (Zone.Identifier) from the app's files.
+
+    Extracting the release .zip copies that mark onto every file, and .NET then refuses to load
+    pythonnet's Python.Runtime.dll, which pywebview needs for its window."""
+    if os.name != "nt" or not hasattr(sys, "_MEIPASS"):
+        return
+    for root, _dirs, files in os.walk(os.path.dirname(sys.executable)):
+        for f in files:
+            if f.lower().endswith((".dll", ".exe", ".pyd")):
+                try:
+                    os.remove(os.path.join(root, f) + ":Zone.Identifier")
+                except OSError:
+                    pass
+
+
+_unblock_downloaded_files()
+
 import cv2
 import mss
 import numpy as np
