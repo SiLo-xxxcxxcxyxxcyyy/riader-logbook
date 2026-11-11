@@ -5,3 +5,4 @@ build/
 *.spec
 overlay/assets/
 __pycache__/
+/*.png
