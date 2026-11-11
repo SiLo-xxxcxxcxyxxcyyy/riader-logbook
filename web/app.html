@@ -99,6 +99,23 @@ ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .sum b{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums}
 .toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:4px;font-weight:600;z-index:20}
 @media (prefers-reduced-motion:no-preference){.mapcard,.btn{transition:border-color .15s}}
+.tree{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.tree{grid-template-columns:minmax(0,1fr)}}
+.sk{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:6px 0;border-top:1px solid var(--line)}
+.sk:first-of-type{border-top:0}
+.sk .nm{font-weight:500}.sk.off .nm{color:var(--mut)}
+.sk .ds{grid-column:1/-1;font-size:12px;color:var(--mut)}
+.pips{display:inline-flex;gap:3px;align-items:center}
+.pips i{width:10px;height:10px;border:1px solid var(--line);border-radius:2px;display:inline-block}
+.pips i.plan{border-color:var(--accent)} .pips i.on{background:var(--accent);border-color:var(--accent)}
+.gate{font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.steps{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+.steps li{display:flex;gap:8px;align-items:baseline}
+.steps li.done{color:var(--mut)} .steps li.done .mono{text-decoration:line-through}
+.nextbox li{padding:6px 0;border-top:1px solid var(--line)} .nextbox li:first-child{border-top:0}
+footer.foot{padding-block:0 40px;font-size:12px;color:var(--mut)}
+footer.foot a{color:var(--mut)}
+input[type=range]{accent-color:var(--accent);flex:1;min-width:160px}
 .desk-only{display:none} body.desk .desk-only{display:revert}
 body.desk .web-only{display:none}
 .kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 6px;background:var(--panel2)}
@@ -115,13 +132,15 @@ body.desk .web-only{display:none}
     <button role="tab" data-tab="quests">Quests</button>
     <button role="tab" data-tab="needs">Shopping list</button>
     <button role="tab" data-tab="items">Items</button>
+    <button role="tab" data-tab="skills">Skills</button>
     <button role="tab" data-tab="scan">Scan</button>
   </nav>
 </div></header>
 
 <main class="wrap" id="main"></main>
+<footer class="wrap foot" id="foot"></footer>
 
-<dialog id="dlg"><div class="hd"><img class="big" id="dlgImg" alt=""><div style="flex:1;min-width:0"><div class="eyebrow" id="dlgSub"></div><h2 id="dlgTitle"></h2></div><button class="btn" id="dlgClose">Close</button></div><div class="bd" id="dlgBody"></div></dialog>
+<dialog id="dlg"><div class="hd"><img class="big" id="dlgImg" alt="" onerror="this.hidden=true"><div style="flex:1;min-width:0"><div class="eyebrow" id="dlgSub"></div><h2 id="dlgTitle"></h2></div><button class="btn" id="dlgClose">Close</button></div><div class="bd" id="dlgBody"></div></dialog>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -174,7 +193,8 @@ const RECIPE_USE={};for(const[id,it]of Object.entries(D.items))for(const m of Ob
 function verdict(id,count){
   const it=I(id),n=needTotal(id),keep=Math.min(count,n),extra=count-keep;
   const base={keep,extra,n};
-  if(extra<=0)return{...base,k:"keep",label:"Keep",why:"You need all of them"};
+  if(count===0)return{...base,k:n?"recycle":"mat",label:n?"Wanted":"None",why:n?`You need ${n}, you have none`:"Not in your vault"};
+  if(extra<=0)return{...base,k:"keep",label:"Keep",why:count<n?`Keep all, you still need ${n-count} more`:"You need all of them"};
   const pre=keep>0?`Keep ${keep}, then `:"";
   if(it.t==="Blueprint")return{...base,k:"learn",label:"Learn",why:pre+"learn the blueprint first, sell duplicates"};
   if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+"use it in a raid or sell it"};
@@ -214,6 +234,7 @@ function openItem(id){
   s.quests.forEach(q=>where.push(`<li>Reward from quest <b>${esc(q.n)}</b> (${q.q}×)</li>`));
   if(it.t==="Blueprint")where.push(`<li class="note">The data has no fixed spawn locations for blueprints. They drop at random from containers, more often in high-value areas, during map events (Night Raid, Hurricane and similar) and from bigger ARC.</li>`);
   h+=sec("Where to get it",where.length?`<ul class="plain">${where.join("")}</ul>`:`<p class="mut">The data lists no specific source.</p>`);
+  if(it.tip)h+=sec("Farming tips · MetaForge",`<div style="white-space:pre-line">${esc(it.tip)}</div>${it.gu?`<a href="${esc(it.gu)}" target="_blank" rel="noopener" class="mut" style="font-size:13px">Full guide on MetaForge</a>`:""}`);
   if(s.from.length)h+=sec("Get it by recycling or salvaging",`<ul class="plain">${s.from.map(x=>`<li>${thumb(x.id)} ${itemBtn(x.id)} <span class="mono mut">${x.rc?`recycle ${x.rc}×`:""}${x.rc&&x.sv?" · ":""}${x.sv?`salvage ${x.sv}×`:""}</span>${have(x.id)?` <span class="chip map">you have ${have(x.id)}</span>`:""}${I(x.id).f?` <span class="mut">· ${esc(I(x.id).f)}</span>`:""}</li>`).join("")}</ul>`);
   if(it.rc)h+=sec("Recycles into",Object.entries(it.rc).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
   if(it.rp)h+=sec("Recipe",Object.entries(it.rp).map(([k,n])=>`${n}× ${itemBtn(k)}`).join(", "));
@@ -270,7 +291,7 @@ function questBlock(id,compact){
   const q=Q[id],st=qStatus(id);
   const req=Object.entries(q.req||{});
   return `<div class="quest">
-   <h3><span class="qdot" style="background:${qColor[id]}"></span>${esc(q.n)} <span class="chip">${esc(q.tr)}</span>${!compact?(q.m||[]).map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(""):""}</h3>
+   <h3><span class="qdot" style="background:${qColor[id]}"></span>${esc(q.n)} <span class="chip">${esc(q.tr)}</span>${q.new?'<span class="chip map">Frozen Trail</span>':""}${!compact?(q.m||[]).map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(""):""}</h3>
    <ol class="obj">${q.o.map(o=>`<li>${esc(o)}</li>`).join("")}</ol>
    ${q.o1?`<div class="note">In a single raid: ${q.o1.map(esc).join("; ")}</div>`:""}
    ${q.oth?`<div class="note">${q.oth.map(esc).join(", ")}</div>`:""}
@@ -384,6 +405,40 @@ V.scan=()=>{
    ${res}</div>`;
 };
 
+/* ---------- skills ---------- */
+const SK={};(D.skills||[]).forEach(s=>SK[s.n]=s);
+const BR=[["CONDITIONING","Conditioning"],["MOBILITY","Mobility"],["SURVIVAL","Survival"]];
+function buildSeq(b){const lv={},seq=[];b.phases.forEach((ph,pi)=>ph.steps.forEach(([n,to])=>{for(let l=(lv[n]||0)+1;l<=to;l++)seq.push({n,l,pi});lv[n]=Math.max(lv[n]||0,to)}));return seq}
+const pips=(max,on,plan)=>`<span class="pips" aria-label="${on} of ${max}">${Array.from({length:max},(_,i)=>`<i class="${i<on?"on":i<plan?"plan":""}"></i>`).join("")}</span>`;
+V.skills=()=>{
+  const builds=D.builds||[];
+  if(!builds.length)return `<div class="empty">No build data in this version.</div>`;
+  const b=builds.find(x=>x.id===S.build)||builds[0];
+  const seq=buildSeq(b),total=seq.length,pts=Math.max(0,Math.min(S.skillPts??76,total));
+  const at=k=>{const a={};seq.slice(0,k).forEach(p=>a[p.n]=p.l);return a};
+  const now=at(pts),fin=at(total);
+  const bp=(a,B)=>Object.entries(a).filter(([n])=>SK[n]?.b===B).reduce((x,[,v])=>x+v,0);
+  const next=seq.slice(pts,pts+5);
+  const curPhase=seq[pts]?.pi;
+  return `<div class="stack" style="gap:16px">
+   <div class="stack" style="gap:4px"><div class="eyebrow">Skill tree · Frozen Trail 2.0 · 48 skills</div><h1>Leveling plan</h1>
+   <p class="mut" style="margin:0;max-width:65ch">You get 76 skill points from leveling and up to 15 more from expeditions. Pick a playstyle, set how many points you have, and the plan shows where the next ones go.</p></div>
+   <div class="filters">${builds.map(x=>`<button data-build="${x.id}" aria-pressed="${x.id===b.id}">${esc(x.n)}</button>`).join("")}</div>
+   <div class="panel stack">
+    <div class="row" style="justify-content:space-between;align-items:baseline"><h2>${esc(b.n)}: ${esc(b.sub)}</h2><span class="mono mut" style="font-size:12px">capstones: ${esc(b.cap||"–")}</span></div>
+    <div class="sum">${b.split76?`<div><span class="eyebrow">76 points</span><b class="mono" style="font-size:16px">C ${b.split76[0]} · M ${b.split76[1]} · S ${b.split76[2]}</b></div>`:""}${b.split91?`<div><span class="eyebrow">91 points</span><b class="mono" style="font-size:16px">C ${b.split91[0]} · M ${b.split91[1]} · S ${b.split91[2]}</b></div>`:""}</div>
+    <div class="row"><label for="skPts">Skill points I have</label><input type="range" id="skPts" min="0" max="${total}" value="${pts}"><input type="number" id="skPtsN" min="0" max="${total}" value="${pts}" aria-label="Skill points"></div>
+    ${next.length?`<div class="stack" style="gap:4px"><div class="eyebrow">Next points</div><ul class="plain nextbox">${next.map((p,i)=>`<li><div class="row"><span class="mono mut">#${pts+i+1}</span><b>${esc(p.n)}</b><span class="mono">${p.l}/${SK[p.n]?.max??"?"}</span><span class="chip">${esc((SK[p.n]?.b||"").toLowerCase())}</span></div><div class="mut" style="font-size:13px">${esc(SK[p.n]?.d||"")}</div></li>`).join("")}</ul></div>`:`<p class="mut">Build complete: all ${total} points placed.</p>`}
+   </div>
+   <div class="tree">${BR.map(([B,label])=>`<div class="panel"><div class="row" style="justify-content:space-between"><h3>${label}</h3><span class="mono">${bp(now,B)}<span class="mut"> / ${bp(fin,B)} planned</span></span></div>
+     ${(D.skills||[]).filter(s=>s.b===B).map(s=>{const on=now[s.n]||0,pl=fin[s.n]||0;return `<div class="sk ${pl?"":"off"}"><span class="nm">${esc(s.n)}${s.gate?` <span class="gate">${s.grp==="L2"?"capstone · 30/40 pts":"choice · 10 pts"}</span>`:s.root?' <span class="gate">root</span>':""}</span>${pips(s.max,on,pl)}<span class="ds">${esc(s.d)}</span></div>`}).join("")}</div>`).join("")}</div>
+   <details class="panel" ${S.skOrder?"open":""} id="skOrderBox"><summary style="cursor:pointer">Full order, point by point</summary><div class="stack" style="margin-top:12px">
+    ${b.phases.map((ph,pi)=>`<div class="stack" style="gap:4px"><div class="eyebrow" style="color:${pi===curPhase?"var(--accent)":""}">Points ${ph.from}–${ph.to} · ${esc(ph.n)}</div><ol class="steps">${ph.steps.map(([n,to])=>{const reached=(now[n]||0)>=to;return `<li class="${reached?"done":""}"><span class="mono">${esc(n)} → ${to}/${SK[n]?.max??"?"}</span></li>`}).join("")}</ol></div>`).join("")}
+   </div></details>
+   <p class="note">Build order from <a href="https://arcraidershub.com/guides/recommended-skill-tree-guide" target="_blank" rel="noopener">Arc Raiders Hub's skill guide</a> (based on Millzaa's in-raid tests). Skill descriptions from the <a href="https://arcraiders.wiki/wiki/Skills" target="_blank" rel="noopener">ARC Raiders Wiki</a>, CC BY-SA 4.0. Skills are listed per branch, not drawn as the in-game tree.</p>
+  </div>`;
+};
+
 /* ---------- scan results ---------- */
 window.onScanResult=r=>{
   if(!r){return}
@@ -422,6 +477,7 @@ document.addEventListener("click",e=>{
   else if(d.undone){delete S.done[d.undone];render()}
   else if(d.doneall){ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}
+  else if(d.build){S.build=d.build;render()}
   else if(d.vf){S.vf=d.vf;render()}
   else if(d.del){setQty(d.del,0);render()}
   else if(d.unpin!==undefined){const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];S.pins[k].splice(+d.unpin,1);render()}
@@ -451,13 +507,17 @@ document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   else if(t.id==="optProj"){S.useProj=t.checked;render()}
   else if(t.id==="pinQ"){S.pinQ=t.value;save()}
   else if(t.id==="it"){S.it=t.value;render()}
+  else if(t.id==="skPtsN"||t.id==="skPts"){S.skillPts=+t.value;render()}
 });
 document.addEventListener("input",e=>{const t=e.target;
-  if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});
+  if(t.id==="skPts"){const n=$("#skPtsN");if(n)n.value=t.value}
+  else if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});
 document.addEventListener("click",e=>{const box=e.target.closest("#mapbox");if(!box)return;
   const r=box.getBoundingClientRect();const x=((e.clientX-r.left)/r.width*100).toFixed(2),y=((e.clientY-r.top)/r.height*100).toFixed(2);
   const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];const q=$("#pinQ")?.value||"";
   (S.pins[k]=S.pins[k]||[]).push({x:+x,y:+y,q,l:q?"":"marker"});render()});
+document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=e.target.open;save()}},true);
+{const m=D.meta;if(m)$("#foot").innerHTML=`Data built ${esc(m.built)} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
 window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render()});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});

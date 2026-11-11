@@ -8,6 +8,7 @@ A helper for ARC Raiders. It tells you what to sell from your vault, which map t
 - **Quests** tracks your progress through the quest chain.
 - **Shopping list** totals what you still need for quests, workshop upgrades and projects, minus what you own.
 - **Items** shows where each item loots, which ARC drop it and on which maps, who sells it, and what recycles into it.
+- **Skills** shows the Frozen Trail 2.0 skill tree (48 skills) and four leveling plans (PvE, PvP solo, PvP squad, PvPvE): set how many skill points you have and it tells you where the next ones go.
 - **Scan** (desktop overlay only) reads the quest log and vault pages from your screen.
 
 ## Desktop overlay (Windows)
@@ -51,4 +52,13 @@ After `python build.py ...`, open `dist/index.html`. Progress is stored in the b
 - The data has no coordinates for quest locations or blueprint spawns.
 
 ## Data
-Game data comes from [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) (MIT), the data behind arctracker.io. Re-run `build.py` to update.
+`build.py` merges four community sources and caches the downloads in `data/cache` (use `--refresh` to update, `--offline` to build from the cache):
+
+| Source | Used for |
+| --- | --- |
+| [MetaForge](https://metaforge.app/arc-raiders) API | Current items, quests, workshop levels, farming tips (covers Frozen Trail / Pendola Pass) |
+| [ARC Raiders Wiki](https://arcraiders.wiki) (CC BY-SA 4.0) | Quest chains and maps, 2.0 skill list, Pendola Pass map |
+| [Arc Raiders Hub skill guide](https://arcraidershub.com/guides/recommended-skill-tree-guide) | Build order per playstyle |
+| [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) (MIT) | Recipes, recycling, ARC drops, trades, projects, map images, scanner icons |
+
+The RaidTheory repo stopped updating in August 2026, so recipes, recycling and ARC drops for Frozen Trail items (and the new Bully, Skulker and Hydra) are missing until a source publishes them.
