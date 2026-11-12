@@ -816,7 +816,8 @@ document.addEventListener("click",e=>{const box=e.target.closest("#mapbox");if(!
 document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=e.target.open;save()}
   const gid=e.target.dataset&&e.target.dataset.g;if(gid){S.gOpen=S.gOpen||{};const was=!!S.gOpen[gid];if(e.target.open)S.gOpen[gid]=1;else delete S.gOpen[gid];save();if(e.target.open&&!was)render()}},true);
 {const m=D.meta;if(m)$("#foot").innerHTML=`Data updated ${esc(new Date(m.built).toLocaleString())} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
-window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render()});
+window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render();
+  try{api().app_info().then(i=>{if(!i)return;const f=$("#foot");if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · code version ${esc(i.code)}</span> · `)})}catch(e){}});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
 render();
