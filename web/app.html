@@ -175,7 +175,10 @@ const api=()=>window.pywebview&&window.pywebview.api;
 
 /* ---------- quests ---------- */
 const Q=D.quests;
-const qStatus=id=>S.done[id]?"done":((Q[id].pre||[]).filter(p=>Q[p]).every(p=>S.done[p])?"avail":"locked");
+// Quests with no known previous quest (hidden quests, or new ones the data can't place yet) only count
+// as available once you have them: scanned, or "I have this quest". The real first quest is the exception.
+const needsConfirm=id=>{const q=Q[id];return !(q.pre||[]).some(p=>Q[p])&&(q.hid||q.new)};
+const qStatus=id=>S.done[id]?"done":(S.active&&S.active[id])?"avail":needsConfirm(id)?"locked":((Q[id].pre||[]).filter(p=>Q[p]).every(p=>S.done[p])?"avail":"locked");
 const qColor={};Object.keys(Q).sort().forEach((id,i)=>qColor[id]=COLORS[i%COLORS.length]);
 function ancestors(id,acc=new Set()){(Q[id]?.pre||[]).forEach(p=>{if(Q[p]&&!acc.has(p)){acc.add(p);ancestors(p,acc)}});return acc}
 
@@ -297,7 +300,7 @@ function questBlock(id,compact){
   const q=Q[id],st=qStatus(id);
   const req=Object.entries(q.req||{});
   return `<div class="quest">
-   <h3><span class="qdot" style="background:${qColor[id]}"></span>${esc(q.n)} <span class="chip">${esc(q.tr)}</span>${q.new?'<span class="chip map">Frozen Trail</span>':""}${!compact?(q.m||[]).map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(""):""}</h3>
+   <h3><span class="qdot" style="background:${qColor[id]}"></span>${esc(q.n)} <span class="chip">${esc(q.tr)}</span>${q.new?'<span class="chip map">Frozen Trail</span>':""}${q.hid?'<span class="chip">hidden quest</span>':""}${!compact?(q.m||[]).map(m=>`<span class="chip map">${esc(MAPN[m]||m)}</span>`).join(""):""}</h3>
    <ol class="obj">${q.o.map(o=>`<li>${esc(o)}</li>`).join("")}</ol>
    ${q.o1?`<div class="note">In a single raid: ${q.o1.map(esc).join("; ")}</div>`:""}
    ${q.oth?`<div class="note">${q.oth.map(esc).join(", ")}</div>`:""}
@@ -306,6 +309,8 @@ function questBlock(id,compact){
    ${guideBlock(id)}
    <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>${!compact&&q.nx?`<button class="btn sm" data-undoneafter="${id}">Not done, with everything after it</button>`:""}`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
    ${!compact&&st!=="done"?`<button class="btn sm" data-doneall="${id}">I'm on this one (mark all before it done)</button>`:""}
+   ${!compact&&st==="locked"&&needsConfirm(id)?`<button class="btn sm" data-have="${id}">I have this quest</button><span class="mut" style="font-size:12px">${q.hid?"Unlocks through something you do in game.":"The data doesn't say what unlocks it."}</span>`:""}
+   ${S.active&&S.active[id]&&st!=="done"?`<button class="btn sm" data-nothave="${id}">I don't have this one</button>`:""}
    ${!compact&&q.nx?`<span class="mut" style="font-size:12px">unlocks: ${q.nx.filter(x=>Q[x]).map(x=>esc(Q[x].n)).join(", ")}</span>`:""}</div>
   </div>`;
 }
@@ -714,7 +719,7 @@ function questScanTarget(replace){
   return{done,active};
 }
 function questScanPreview(replace){const t=questScanTarget(replace).done;return{added:Object.keys(t).filter(k=>!S.done[k]).length,undone:Object.keys(S.done).filter(k=>!t[k]).length}}
-function snapshotDone(){S.doneUndo=JSON.parse(JSON.stringify(S.done))}
+function snapshotDone(){S.doneUndo=JSON.parse(JSON.stringify({d:S.done,a:S.active||{}}))}
 function applyQuests(replace){
   if(!S.scan.quests.some(q=>q.use!==false)){toast("Tick at least one quest");return}
   snapshotDone();const t=questScanTarget(replace);S.done=t.done;S.active=Object.fromEntries([...t.active].map(i=>[i,1]));
@@ -745,7 +750,9 @@ document.addEventListener("click",e=>{
   else if(d.img){S.lobbyImg=d.img;render()}
   else if(d.done){S.done[d.done]=true;if(S.active)delete S.active[d.done];render();toast("Quest done")}
   else if(d.undone){delete S.done[d.undone];render()}
-  else if(d.doneall){snapshotDone();ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
+  else if(d.have){S.active=S.active||{};S.active[d.have]=1;render();toast("Added to your active quests")}
+  else if(d.nothave){delete S.active[d.nothave];render()}
+  else if(d.doneall){snapshotDone();S.active=S.active||{};S.active[d.doneall]=1;ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}
   else if(d.build){S.build=d.build;render()}
   else if(d.zoom!==undefined)window.__zoom(+d.zoom)
@@ -772,8 +779,8 @@ document.addEventListener("click",e=>{
   else if(t.id==="applyQuests")applyQuests(true);
   else if(t.id==="applyQuestsAdd")applyQuests(false);
   else if(t.id==="openScans"&&api())api().open_scans_folder();
-  else if(t.id==="undoQuests"&&S.doneUndo){S.done=S.doneUndo;S.doneUndo=null;render();toast("Quest progress restored")}
-  else if(t.id==="resetQuests"){if(t.dataset.arm){snapshotDone();S.done={};render();toast("All quests reset. Undo is available.")}else{t.dataset.arm=1;t.textContent="Reset every quest?"}}
+  else if(t.id==="undoQuests"&&S.doneUndo){const u=S.doneUndo;S.done=u.d||u;S.active=u.a||S.active||{};S.doneUndo=null;render();toast("Quest progress restored")}
+  else if(t.id==="resetQuests"){if(t.dataset.arm){snapshotDone();S.done={};S.active={};render();toast("All quests reset. Undo is available.")}else{t.dataset.arm=1;t.textContent="Reset every quest?"}}
   else if(d.undoneafter){snapshotDone();delete S.done[d.undoneafter];descendants(d.undoneafter).forEach(x=>delete S.done[x]);render();toast("Reset this quest and everything after it")}
   else if(t.id==="applyVaultReplace")applyVault(true);
   else if(t.id==="applyVaultAdd")applyVault(false);

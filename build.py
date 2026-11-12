@@ -361,10 +361,16 @@ def assemble(base, F, log=print):
     quests, qname_to_id, guide_files = {}, {}, set()
     for q in mf_quests:
         qname_to_id[norm(q["name"])] = uid(q["id"])
+    import difflib
+    wiki_keys = list(wiki_by_name)
     for q in mf_quests:
         qid = uid(q["id"])
         rt = rt_quests.get(qid, {})
-        title, w = wiki_by_name.get(norm(q["name"]), ("", ""))
+        key = norm(q["name"])
+        if key not in wiki_by_name:                       # e.g. "When Everything Falls" vs "Where Everything Falls"
+            close = difflib.get_close_matches(key, wiki_keys, n=1, cutoff=0.85)
+            key = close[0] if close else key
+        title, w = wiki_by_name.get(key, ("", ""))
         loc = sorted({MAP_ALIASES.get(norm(x)) for x in re.split(r"[;,]", infobox(w, "location"))} - {None}) or rt.get("map")
         nx = sorted({qname_to_id.get(norm(x)) for x in infobox(w, "next").split(";")} - {None})
         gd = quest_guide(w) if w else None
@@ -376,6 +382,7 @@ def assemble(base, F, log=print):
             "req": mf_req(q.get("required_items")), "rw": mf_req(q.get("rewards")), "nx": nx or None,
             "oth": rt.get("oth"), "xp": q.get("xp") or None,
             "new": 1 if "Frozen Trail" in infobox(w, "introduced") or qid not in rt_quests else None,
+            "hid": 1 if infobox(w, "isHidden").lower() == "true" else None,
             "g": gd, "wp": "https://arcraiders.wiki/wiki/" + urllib.parse.quote(title.replace(" ", "_")) if title else None,
             "gu": urllib.parse.urljoin("https://metaforge.app", q["guide_url"]) if q.get("guide_url") else None,
         }.items() if v not in (None, {}, [])}
