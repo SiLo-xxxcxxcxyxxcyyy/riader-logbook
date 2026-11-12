@@ -59,6 +59,8 @@ import webview
 from pynput import keyboard
 
 from scanner import Scanner
+import capture                                             # noqa: E402
+capture.enable_dpi_awareness()
 
 FROZEN = hasattr(sys, "_MEIPASS")
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
@@ -87,8 +89,10 @@ class Api:
     # ---- called from the UI (window.pywebview.api.*) ----
     def scan_screen(self):
         with self._lock:
-            img = self._grab()
-            return self._safe_scan(img)
+            img, info = self._grab()
+            res = self._safe_scan(img)
+            res["capture"] = info
+            return res
 
     def scan_file(self):
         paths = self._window.create_file_dialog(
@@ -144,13 +148,11 @@ class Api:
             self._window.hide()
             time.sleep(0.25)
         try:
-            with mss.mss() as sct:
-                mon = sct.monitors[min(self._monitor, len(sct.monitors) - 1)]
-                shot = np.array(sct.grab(mon))[:, :, :3]
+            shot, info = capture.grab(self._monitor, bring_to_front=was_visible)
         finally:
             if was_visible:
                 self._window.show()
-        return np.ascontiguousarray(shot)
+        return shot, info
 
     def _push(self, result):
         self._window.evaluate_js(f"window.onScanResult({json.dumps(result)})")

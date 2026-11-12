@@ -1,10 +1,11 @@
 {
- "version": 1,
+ "version": 2,
  "min_app": 1,
  "files": [
   "web/app.html",
   "build.py",
   "overlay/scanner.py",
+  "overlay/capture.py",
   "sources/skill_builds.json",
   "sources/hub_guides.json",
   "sources/map_align.json"

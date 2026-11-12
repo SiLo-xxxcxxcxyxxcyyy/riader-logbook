@@ -422,6 +422,9 @@ V.scan=()=>{
     <p class="note">Fix any wrong count before applying. Low matches are shown in red.</p>
     <div class="row"><button class="btn pri" id="applyVaultReplace">Replace my vault with this</button><button class="btn" id="applyVaultAdd">Add to my vault</button><button class="btn" id="dropScan">Discard</button></div></div>`;
   }
+  const c=r&&r.capture;
+  const capLine=c?`<p class="mono ${c.target==="game"&&!c.warning?"mut":"conf low"}" style="margin:0;font-size:12px">${c.target==="game"?`Scanned the game window “${esc(c.title||"ARC Raiders")}” (${esc(c.size)})`:`Scanned monitor ${c.monitor} (${esc(c.size||"")}). ${esc(c.note||"")}`}${c.warning?` ${esc(c.warning)}`:""}</p>`:"";
+  if(res&&capLine)res=res.replace('<div class="eyebrow">Last scan',capLine.replace("<p ",'<p data-cap="1" ')+'<div class="eyebrow">Last scan');
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Screen scan</div><h1>Read it from the game</h1>
    <p class="mut" style="margin:0;max-width:65ch">The desktop overlay reads your screen like a screenshot tool. It never touches the game's memory or files and never sends input to the game.</p></div>
