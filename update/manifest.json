@@ -1,0 +1,12 @@
+{
+ "version": 1,
+ "min_app": 1,
+ "files": [
+  "web/app.html",
+  "build.py",
+  "overlay/scanner.py",
+  "sources/skill_builds.json",
+  "sources/hub_guides.json",
+  "sources/map_align.json"
+ ]
+}

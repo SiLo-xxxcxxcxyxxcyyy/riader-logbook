@@ -304,7 +304,7 @@ function questBlock(id,compact){
    ${req.length?`<div class="row" style="font-size:13px"><span class="mut">Hand in:</span>${req.map(([it,n])=>`<span class="chip" style="color:${have(it)>=n?"var(--sell)":"var(--warn)"}">${itemBtn(it)} ${Math.min(have(it),n)}/${n}</span>`).join("")}</div>`:""}
    ${q.rw?`<div class="mut" style="font-size:13px">Reward: ${Object.entries(q.rw).map(([it,n])=>`${n}× ${itemBtn(it)}`).join(", ")}</div>`:""}
    ${guideBlock(id)}
-   <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
+   <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>${!compact&&q.nx?`<button class="btn sm" data-undoneafter="${id}">Not done, with everything after it</button>`:""}`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
    ${!compact&&st!=="done"?`<button class="btn sm" data-doneall="${id}">I'm on this one (mark all before it done)</button>`:""}
    ${!compact&&q.nx?`<span class="mut" style="font-size:12px">unlocks: ${q.nx.filter(x=>Q[x]).map(x=>esc(Q[x].n)).join(", ")}</span>`:""}</div>
   </div>`;
@@ -330,7 +330,8 @@ V.quests=()=>{
   const list=Object.keys(Q).filter(id=>(S.qf==="all"||qStatus(id)===S.qf)&&(!term||(Q[id].n+" "+Q[id].tr+" "+Q[id].o.join(" ")).toLowerCase().includes(term))).sort((a,b)=>Q[a].tr.localeCompare(Q[b].tr)||Q[a].n.localeCompare(Q[b].n));
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Quests · ${counts.done}/${Object.keys(Q).length} done</div><h1>Your progress</h1>
-   <p class="mut" style="margin:0;max-width:65ch">Find the quest you're on in the game and press “I'm on this one”. Everything before it is marked done, so the app knows what's available.</p></div>
+   <p class="mut" style="margin:0;max-width:65ch">Find the quest you're on in the game and press “I'm on this one”. Everything before it is marked done, so the app knows what's available.</p>
+   <div class="row" style="margin-top:6px">${S.doneUndo?`<button class="btn sm pri" id="undoQuests">Undo last change</button>`:""}<button class="btn sm" id="resetQuests">Reset all quests</button></div></div>
    <div class="row"><div class="filters">${[["avail","Available"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
    <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
    <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">Nothing matches this filter.</div>`}</div></div>`;
@@ -401,9 +402,16 @@ V.scan=()=>{
   let res="";
   if(r&&r.kind==="quests"){
     res=`<div class="panel stack"><div class="eyebrow">Last scan · quest log</div><h2>${plural(r.quests.length,"quest")} recognised</h2>
-    ${r.quests.length?`<ul class="plain scanlist">${r.quests.map(q=>`<li class="row"><span>${esc(Q[q.id]?.n||q.id)}</span><span class="conf ${q.score<90?"low":""}">${Math.round(q.score)}% · read “${esc(q.text)}”</span></li>`).join("")}</ul>
-    <p class="note">Applying marks every quest before these as done and these as active.</p>
-    <div class="row"><button class="btn pri" id="applyQuests">Apply to my progress</button><button class="btn" id="dropScan">Discard</button></div>`:`<p class="mut">No quest names found. Open the quest log in the game so the quest titles are visible, then scan again.</p>`}</div>`;
+    ${r.quests.length?`<p class="mut" style="margin:0;font-size:13px">Untick anything the scanner got wrong. Low matches start unticked.</p>
+    <ul class="plain scanlist">${r.quests.map((q,i)=>`<li><label class="row"><input type="checkbox" data-scanq="${i}" ${q.use!==false?"checked":""}><span>${esc(Q[q.id]?.n||q.id)}</span><span class="conf ${q.score<90?"low":""}">${Math.round(q.score)}% · read “${esc(q.text)}”</span></label></li>`).join("")}</ul>
+    ${(()=>{const pv=questScanPreview();return `<p class="note">These become your active quests. ${pv.done} quest${pv.done===1?"":"s"} before them will be marked done${pv.undone?`, and ${pv.undone} you had marked done will be reset`:""}.</p>`})()}
+    <div class="row"><button class="btn pri" id="applyQuests">Set my progress to this</button><button class="btn" id="applyQuestsAdd">Only add, keep the rest</button><button class="btn" id="dropScan">Discard</button></div>`:`<p class="mut">No quest names found. Open the quest log in the game so the quest titles are visible, then scan again.</p>`}</div>`;
+  }else if(r&&r.kind==="error"){
+    const d=r.debug||{};
+    res=`<div class="panel stack"><div class="eyebrow">Last scan</div><h2>Nothing recognised</h2>
+    <p style="margin:0">${esc(r.error)}</p>
+    ${r.debug?`<p class="mono mut" style="margin:0;font-size:12px">screen ${esc(d.size)} · ${d.text_lines} text lines · ${d.slots_found} item slots found${d.slot_size?` (${d.slot_size}px)`:""}</p>`:""}
+    ${r.saved?`<p class="note">The screenshot was saved to <span class="mono">${esc(r.saved)}</span>. Send it in so the scanner can be tuned for your screen.</p><div class="row"><button class="btn" id="openScans">Open scans folder</button></div>`:""}</div>`;
   }else if(r&&r.kind==="vault"){
     const tot=r.items.reduce((a,x)=>a+x.count,0);
     res=`<div class="panel stack"><div class="eyebrow">Last scan · vault ${r.pages>1?`· ${plural(r.pages,"page")}`:""}</div><h2>${plural(r.items.length,"item type")} · ${tot} pieces</h2>
@@ -671,7 +679,9 @@ V.help=()=>{
     <li>Run the game in <b>borderless windowed</b> mode so the overlay can stay on top.</li>
     <li>The scanner only takes screenshots. It never reads game memory or files and never sends input to the game.</li>
     <li>Check a scan before applying it: low-confidence matches are shown in red, and you can fix counts by hand.</li>
-    <li><b>Updates:</b> on every launch the app downloads fresh data (items, quests, map markers, events) in the background and reloads when it's done. The footer shows when the data was last updated.</li></ul>`)}
+    <li><b>Updates:</b> on every launch the app checks GitHub for a newer version of itself and downloads fresh data (items, quests, map markers, events) in the background, then reloads. Small fixes arrive this way; you only download a new .exe when the app tells you to.</li>
+    <li><b>Scan didn't work?</b> Every scan is saved as a screenshot. Open the Scan tab and press <i>Open scans folder</i> to find it and send it in, so the scanner can be tuned for your screen.</li>
+    <li><b>Wrong quests after a scan?</b> Press <i>Undo last change</i> or <i>Reset all quests</i> on the Quests tab, or <i>Not done, with everything after it</i> on a single quest.</li></ul>`)}
   ${sec("data","Your data",`<p style="margin:0">Progress is saved in this browser or app only. To move it, use <i>Backup and transfer</i> at the bottom of the ${go("vault","Vault")} tab: create a backup, copy it, and restore it on the other device.</p>`)}
   ${sec("limits","Good to know",`<ul class="plain" style="gap:6px">
     <li>Map markers and quest spots are community data from MetaForge. Not every quest has spots yet, and spawn spots are chances, not guarantees.</li>
@@ -685,16 +695,23 @@ V.help=()=>{
 /* ---------- scan results ---------- */
 window.onScanResult=r=>{
   if(!r){return}
-  if(r.error){toast(r.error);return}
+  if(r.error){S.scan={kind:"error",...r};S.tab="scan";render();toast("Nothing recognised");return}
+  if(r.kind==="quests")r.quests.forEach(q=>q.use=q.score>=90);
   S.scan=r;S.tab="scan";render();
   toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?`${plural(r.items.length,"item type")} recognised`:"Nothing recognised");
 };
-function applyQuests(){
-  const ids=S.scan.quests.map(q=>q.id);
-  ids.forEach(id=>{ancestors(id).forEach(a=>S.done[a]=true)});
-  ids.forEach(id=>delete S.done[id]);
-  S.scan=null;S.tab="lobby";render();toast("Quest progress updated");
+function questScanTarget(replace){
+  const ids=S.scan.quests.filter(q=>q.use!==false).map(q=>q.id),done=replace?{}:{...S.done};
+  ids.forEach(id=>ancestors(id).forEach(a=>done[a]=true));ids.forEach(id=>delete done[id]);return done;
 }
+function questScanPreview(){const t=questScanTarget(true);return{done:Object.keys(t).length,undone:Object.keys(S.done).filter(k=>!t[k]).length}}
+function snapshotDone(){S.doneUndo=JSON.parse(JSON.stringify(S.done))}
+function applyQuests(replace){
+  if(!S.scan.quests.some(q=>q.use!==false)){toast("Tick at least one quest");return}
+  snapshotDone();S.done=questScanTarget(replace);
+  S.scan=null;S.tab="lobby";render();toast("Quest progress updated. Undo it on the Quests tab.");
+}
+function descendants(id,acc=new Set()){(Q[id]?.nx||[]).forEach(n=>{if(Q[n]&&!acc.has(n)){acc.add(n);descendants(n,acc)}});return acc}
 function applyVault(replace){
   if(replace)S.inv={};
   S.scan.items.forEach(x=>{if(x.count>0)S.inv[x.id]=(replace?0:(S.inv[x.id]||0))+x.count});
@@ -719,7 +736,7 @@ document.addEventListener("click",e=>{
   else if(d.img){S.lobbyImg=d.img;render()}
   else if(d.done){S.done[d.done]=true;render();toast("Quest done")}
   else if(d.undone){delete S.done[d.undone];render()}
-  else if(d.doneall){ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
+  else if(d.doneall){snapshotDone();ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}
   else if(d.build){S.build=d.build;render()}
   else if(d.zoom!==undefined)window.__zoom(+d.zoom)
@@ -743,7 +760,12 @@ document.addEventListener("click",e=>{
   else if(t.id==="scanNow"&&api()){toast("Scanning…");api().scan_screen().then(window.onScanResult)}
   else if(t.id==="scanFile"&&api()){api().scan_file().then(window.onScanResult)}
   else if(t.id==="scanReset"&&api()){api().reset_vault_session().then(()=>toast("New vault scan started. Scan each vault page with F9."))}
-  else if(t.id==="applyQuests")applyQuests();
+  else if(t.id==="applyQuests")applyQuests(true);
+  else if(t.id==="applyQuestsAdd")applyQuests(false);
+  else if(t.id==="openScans"&&api())api().open_scans_folder();
+  else if(t.id==="undoQuests"&&S.doneUndo){S.done=S.doneUndo;S.doneUndo=null;render();toast("Quest progress restored")}
+  else if(t.id==="resetQuests"){if(t.dataset.arm){snapshotDone();S.done={};render();toast("All quests reset. Undo is available.")}else{t.dataset.arm=1;t.textContent="Reset every quest?"}}
+  else if(d.undoneafter){snapshotDone();delete S.done[d.undoneafter];descendants(d.undoneafter).forEach(x=>delete S.done[x]);render();toast("Reset this quest and everything after it")}
   else if(t.id==="applyVaultReplace")applyVault(true);
   else if(t.id==="applyVaultAdd")applyVault(false);
   else if(t.id==="dropScan"){S.scan=null;render()}
@@ -754,6 +776,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addNa
 document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   if(d.qty){setQty(d.qty,+t.value);render()}
   else if(d.use){S.use=S.use||{};if(t.checked)S.use[d.use]=1;else delete S.use[d.use];save();openItem(d.use)}
+  else if(d.scanq!==undefined){S.scan.quests[+d.scanq].use=t.checked;render()}
   else if(d.scancount!==undefined){S.scan.items[+d.scancount].count=Math.max(0,+t.value||0);save()}
   else if(d.hide){S.hide[d.hide]=+t.value;render()}
   else if(d.proj){S.proj[d.proj]=+t.value;render()}

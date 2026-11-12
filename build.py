@@ -35,7 +35,8 @@ import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RES = getattr(sys, "_MEIPASS", HERE)          # bundled resources when frozen with PyInstaller
+# web/ and sources/: downloaded code folder (set by the updater), else the bundle, else this checkout
+RES = os.environ.get("RAIDER_RES") or getattr(sys, "_MEIPASS", HERE)
 UA = {"User-Agent": "RaiderLogbook/2.0 (personal game helper)"}
 HOUR = 3600
 MF = "https://metaforge.app/api/arc-raiders/"

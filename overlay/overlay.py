@@ -47,6 +47,11 @@ def _unblock_downloaded_files():
 
 _unblock_downloaded_files()
 
+DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "RaiderLogbook")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import updater                                             # noqa: E402
+CODE_ROOT, CODE_VERSION = updater.activate(DATA_DIR)       # newer downloaded code wins over the bundle
+
 import cv2
 import mss
 import numpy as np
@@ -61,7 +66,7 @@ ROOT = BASE if FROZEN else os.path.dirname(BASE)          # where build.py, web/
 sys.path.insert(0, ROOT)
 BUNDLED_UI = os.path.join(BASE, "ui", "index.html") if FROZEN else os.path.join(ROOT, "dist", "index.html")
 BASE_JSON = os.path.join(BASE, "assets", "base.json")
-DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "RaiderLogbook")
+SCAN_DIR = os.path.join(DATA_DIR, "scans")
 PAGE_DIR = os.path.join(DATA_DIR, "page")
 UI = os.path.join(PAGE_DIR, "index.html")
 
@@ -96,16 +101,42 @@ class Api:
         with self._lock:
             return self._safe_scan(img)
 
+    def open_scans_folder(self):
+        os.makedirs(SCAN_DIR, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(SCAN_DIR)
+        return SCAN_DIR
+
+    def app_info(self):
+        return {"app": updater.APP_VERSION, "code": CODE_VERSION, "scans": SCAN_DIR}
+
     def reset_vault_session(self):
         self._scn().reset_vault_session()
         return True
 
     # ---- internals ----
     def _safe_scan(self, img):
+        saved = self._save_scan(img)
         try:
-            return self._scn().scan(img)
+            res = self._scn().scan(img)
         except Exception as e:  # keep the overlay alive and tell the user
-            return {"error": f"Scan failed: {e}"}
+            res = {"error": f"Scan failed: {e}"}
+        if saved:
+            res["saved"] = saved
+        return res
+
+    def _save_scan(self, img, keep=15):
+        """Keep the last screenshots so a failed scan can be sent in and the scanner tuned."""
+        try:
+            os.makedirs(SCAN_DIR, exist_ok=True)
+            path = os.path.join(SCAN_DIR, time.strftime("scan-%Y%m%d-%H%M%S.png"))
+            cv2.imencode(".png", img)[1].tofile(path)
+            old = sorted(f for f in os.listdir(SCAN_DIR) if f.startswith("scan-"))
+            for f in old[:-keep]:
+                os.remove(os.path.join(SCAN_DIR, f))
+            return path
+        except Exception:
+            return None
 
     def _grab(self):
         was_visible = self._visible
@@ -138,13 +169,20 @@ def update_data(api: Api):
     Sources are cached in DATA_DIR/cache and re-downloaded when older than their limit
     (events 3 h, items and quests 12 h, map markers and wiki 24 h)."""
     try:
-        import build
         log = lambda m: print("[update]", m)
+        up = updater.check(DATA_DIR, log)
+        if up["status"] == "updated":
+            # use the fresh build.py / page template right away; the scanner switches on next launch
+            global CODE_ROOT, CODE_VERSION
+            CODE_ROOT, CODE_VERSION = updater.activate(DATA_DIR)
+        import build
         page = build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR,
                          assets=False, log=log)
         api._window.load_url(pathlib.Path(page).resolve().as_uri())
         time.sleep(1.5)
-        api._window.evaluate_js("toast('Data updated')")
+        msg = {"updated": f"App updated to version {up.get('version')} and data refreshed",
+               "new_exe_needed": "A new version needs a fresh download from GitHub (see Help)"}.get(up["status"], "Data updated")
+        api._window.evaluate_js(f"toast({json.dumps(msg)})")
     except Exception as e:
         print("[update] failed:", e)
         try:

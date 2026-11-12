@@ -231,7 +231,10 @@ class Scanner:
             items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
             return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": self._unknown,
                     "duplicate": not added}
-        return {"error": "Nothing recognised. Open the quest log or a vault page and try again."}
+        slots = self.find_slots(img)
+        return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
+                "debug": {"size": f"{w}x{h}", "text_lines": len(lines), "slots_found": len(slots),
+                          "slot_size": int(np.median([s[2] for s in slots])) if slots else 0}}
 
 
 def _snap_to_grid(rects):
