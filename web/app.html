@@ -329,15 +329,30 @@ function guideBlock(id){
    <div class="mut" style="font-size:11px">Walkthrough text from the ARC Raiders Wiki (CC BY-SA 4.0). Screenshots load in the desktop app; in the browser open the wiki link.</div>
   </div></details>`;
 }
+function activePanel(){
+  const act=Object.keys(S.active||{}).filter(id=>Q[id]&&!S.done[id]);
+  return `<div class="panel stack" style="gap:8px"><h2>Which quests are in your log?</h2>
+   <div class="row"><input id="actAdd" list="questNames" placeholder="Type a quest name, e.g. Source of the Contamination" style="flex:1;min-width:200px"><button class="btn pri" id="actAddBtn">Add</button>
+   <datalist id="questNames">${Object.values(Q).map(q=>`<option value="${esc(q.n)}">`).join("")}</datalist></div>
+   ${act.length?`<div class="row">${act.map(id=>`<span class="chip map" style="display:inline-flex;gap:6px;align-items:center">${esc(Q[id].n)}<button class="itemlink" data-actdel="${id}" aria-label="Remove ${esc(Q[id].n)}">✕</button></span>`).join("")}</div>
+   <p class="note" style="margin:0">${plural(Object.keys(S.done).length,"quest")} marked done from these. Added every quest in your log? Then press the button: everything that isn't in your log and doesn't come after one of these quests is marked done.</p>
+   <div class="row"><button class="btn" id="actAll">That's everything in my log</button></div>`:`<p class="note" style="margin:0">Add each quest you have in game (at all traders). In the desktop app you can also open a quest and press <span class="kbd">F9</span>.</p>`}</div>`;
+}
+function setActive(ids){ // recompute progress from the active quests, keeping manual "done" marks
+  snapshotDone();S.active=Object.fromEntries(ids.map(i=>[i,1]));
+  const done={...S.done};ids.forEach(id=>ancestors(id).forEach(a=>done[a]=true));
+  ids.forEach(id=>{delete done[id];descendants(id).forEach(x=>delete done[x])});S.done=done;
+}
 V.quests=()=>{
   const counts={avail:0,locked:0,done:0};Object.keys(Q).forEach(id=>counts[qStatus(id)]++);
   const term=(S.qs||"").toLowerCase();
   const list=Object.keys(Q).filter(id=>(S.qf==="all"||qStatus(id)===S.qf)&&(!term||(Q[id].n+" "+Q[id].tr+" "+Q[id].o.join(" ")).toLowerCase().includes(term))).sort((a,b)=>Q[a].tr.localeCompare(Q[b].tr)||Q[a].n.localeCompare(Q[b].n));
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Quests · ${counts.done}/${Object.keys(Q).length} done</div><h1>Your progress</h1>
-   <p class="mut" style="margin:0;max-width:65ch">Find the quest you're on in the game and press “I'm on this one”. Everything before it is marked done, so the app knows what's available.</p>
+   <p class="mut" style="margin:0;max-width:65ch">Tell the app which quests are in your quest log right now. Everything before them is marked done, so it knows where you are.</p>
    ${S.qf==="avail"&&!Object.keys(S.active||{}).length?`<p class="note" style="margin:6px 0 0">This list shows quests you can take <b>now</b>, according to your progress. Is one missing from your log in game? Then you've finished it: press <i>Not in my quest log</i>. Faster: open your active quests at their traders, press <span class="kbd">F9</span> on each and <i>Add to my progress</i>, and everything before them is marked done.</p>`:""}
    <div class="row" style="margin-top:6px">${S.doneUndo?`<button class="btn sm pri" id="undoQuests">Undo last change</button>`:""}<button class="btn sm" id="resetQuests">Reset all quests</button></div></div>
+   ${activePanel()}
    <div class="row"><div class="filters">${[["avail","Available"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
    <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
    <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">Nothing matches this filter.</div>`}</div></div>`;
@@ -777,6 +792,12 @@ document.addEventListener("click",e=>{
   else if(t.id==="scanNow"&&api()){toast("Scanning…");api().scan_screen().then(window.onScanResult)}
   else if(t.id==="scanFile"&&api()){api().scan_file().then(window.onScanResult)}
   else if(t.id==="scanReset"&&api()){api().reset_vault_session().then(()=>toast("New vault scan started. Scan each vault page with F9."))}
+  else if(t.id==="actAddBtn")addActive();
+  else if(t.id==="actAll"){const act=Object.keys(S.active||{}).filter(id=>Q[id]);snapshotDone();const keep=new Set(act);act.forEach(id=>descendants(id).forEach(x=>keep.add(x)));
+    Object.keys(Q).forEach(id=>{if(!keep.has(id)&&!(needsConfirm(id)&&!S.done[id]))S.done[id]=true});S.qf="avail";render();toast("Progress set from your quest log")}
+  else if(d.actdel){const ids=Object.keys(S.active||{}).filter(i=>i!==d.actdel);snapshotDone();delete S.active[d.actdel];
+    // drop the quests that were only marked done because of the removed one
+    const keep=new Set();ids.forEach(i=>ancestors(i).forEach(a=>keep.add(a)));ancestors(d.actdel).forEach(a=>{if(!keep.has(a))delete S.done[a]});render()}
   else if(t.id==="applyQuests")applyQuests(true);
   else if(t.id==="applyQuestsAdd")applyQuests(false);
   else if(t.id==="openScans"&&api())api().open_scans_folder();
@@ -789,7 +810,11 @@ document.addEventListener("click",e=>{
 });
 function addItem(){const n=$("#addName").value.trim().toLowerCase();const id=BY_NAME[n]||Object.keys(D.items).find(k=>D.items[k].n.toLowerCase().startsWith(n));
   if(!n||!id){toast("No item with that name");return}setQty(id,have(id)+Math.max(1,+$("#addQty").value||1));$("#addName").value="";render();$("#addName").focus();toast(`Added ${nm(id)}`)}
-document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addName")addItem()});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addName")addItem();if(e.key==="Enter"&&e.target.id==="actAdd")addActive()});
+function addActive(){const v=($("#actAdd").value||"").trim().toLowerCase();if(!v)return;
+  const id=Object.keys(Q).find(k=>Q[k].n.toLowerCase()===v)||Object.keys(Q).find(k=>Q[k].n.toLowerCase().startsWith(v))||Object.keys(Q).find(k=>Q[k].n.toLowerCase().includes(v));
+  if(!id){toast("No quest with that name");return}
+  setActive([...new Set([...Object.keys(S.active||{}),id])]);S.qf="avail";render();$("#actAdd")?.focus();toast(`Added ${Q[id].n}`)}
 document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   if(d.qty){setQty(d.qty,+t.value);render()}
   else if(d.use){S.use=S.use||{};if(t.checked)S.use[d.use]=1;else delete S.use[d.use];save();openItem(d.use)}
