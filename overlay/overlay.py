@@ -1,39 +1,22 @@
-"""Raider Logbook desktop overlay.
+"""Raider Logbook launcher (the part frozen into RaiderLogbook.exe).
 
-An always-on-top window with the Raider Logbook UI plus a screen scanner.
+1. removes Windows' "downloaded from the internet" mark so .NET can load pywebview's DLLs,
+2. checks GitHub for newer code (update/manifest.json) and downloads it to %APPDATA%\\RaiderLogbook\\code,
+3. loads the app (app.py), scanner, capture and build.py from that folder by file path, falling back
+   to the copies bundled in the .exe, and starts it.
 
-Hotkeys (global, work while the game has focus):
-  F8          show / hide the overlay
-  F9          scan the screen (quest log or vault page, detected automatically)
-  Shift+F9    start a new vault scan (then F9 on each vault page)
-
-Run the game in borderless windowed mode so the overlay can sit on top.
-The overlay only takes screenshots. It does not read game memory or files and
-does not send any input to the game.
-
-On every launch it rebuilds its data from MetaForge and the ARC Raiders Wiki in the background
-(cached, see update_data) and reloads when done.
-
-Usage:  python overlay.py [--monitor N] [--no-update]
+Everything except this file and updater.py can therefore be fixed without a new .exe.
+Each launch writes %APPDATA%\\RaiderLogbook\\app.log.
 """
 from __future__ import annotations
 
-import argparse
-import json
+import importlib.util
+import logging
 import os
-import pathlib
-import shutil
 import sys
-import threading
-import time
-
 
 
 def _unblock_downloaded_files():
-    """Remove Windows' "downloaded from the internet" mark (Zone.Identifier) from the app's files.
-
-    Extracting the release .zip copies that mark onto every file, and .NET then refuses to load
-    pythonnet's Python.Runtime.dll, which pywebview needs for its window."""
     if os.name != "nt" or not hasattr(sys, "_MEIPASS"):
         return
     for root, _dirs, files in os.walk(os.path.dirname(sys.executable)):
@@ -46,192 +29,53 @@ def _unblock_downloaded_files():
 
 
 _unblock_downloaded_files()
-
 DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "RaiderLogbook")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import updater                                             # noqa: E402
-CODE_ROOT, CODE_VERSION = updater.activate(DATA_DIR)       # newer downloaded code wins over the bundle
+os.makedirs(DATA_DIR, exist_ok=True)
+LOG = os.path.join(DATA_DIR, "app.log")
+try:
+    if os.path.getsize(LOG) > 1_000_000:
+        os.replace(LOG, LOG + ".old")
+except OSError:
+    pass
+logging.basicConfig(filename=LOG, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
+logging.info("---- launch: %s", sys.argv)
 
-import cv2
-import mss
-import numpy as np
-import webview
-from pynput import keyboard
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import updater  # noqa: E402
 
-from scanner import Scanner
-import capture                                             # noqa: E402
-capture.enable_dpi_awareness()
-
-FROZEN = hasattr(sys, "_MEIPASS")
-BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-ROOT = BASE if FROZEN else os.path.dirname(BASE)          # where build.py, web/ and sources/ live
-sys.path.insert(0, ROOT)
-BUNDLED_UI = os.path.join(BASE, "ui", "index.html") if FROZEN else os.path.join(ROOT, "dist", "index.html")
-BASE_JSON = os.path.join(BASE, "assets", "base.json")
-SCAN_DIR = os.path.join(DATA_DIR, "scans")
-PAGE_DIR = os.path.join(DATA_DIR, "page")
-UI = os.path.join(PAGE_DIR, "index.html")
-
-
-class Api:
-    def __init__(self, monitor: int):
-        self._monitor = monitor
-        self._window: webview.Window | None = None
-        self._scanner: Scanner | None = None
-        self._lock = threading.Lock()
-        self._visible = True
-
-    def _scn(self) -> Scanner:
-        if self._scanner is None:
-            self._scanner = Scanner()
-        return self._scanner
-
-    # ---- called from the UI (window.pywebview.api.*) ----
-    def scan_screen(self):
-        with self._lock:
-            img, info = self._grab()
-            res = self._safe_scan(img)
-            res["capture"] = info
-            return res
-
-    def scan_file(self):
-        paths = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, file_types=("Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)", "All files (*.*)"))
-        if not paths:
-            return None
-        img = cv2.imdecode(np.fromfile(paths[0], dtype=np.uint8), cv2.IMREAD_COLOR)
-        if img is None:
-            return {"error": "That file isn't an image the scanner can read."}
-        with self._lock:
-            return self._safe_scan(img)
-
-    def open_scans_folder(self):
-        os.makedirs(SCAN_DIR, exist_ok=True)
-        if os.name == "nt":
-            os.startfile(SCAN_DIR)
-        return SCAN_DIR
-
-    def app_info(self):
-        return {"app": updater.APP_VERSION, "code": CODE_VERSION, "scans": SCAN_DIR}
-
-    def reset_vault_session(self):
-        self._scn().reset_vault_session()
-        return True
-
-    # ---- internals ----
-    def _safe_scan(self, img):
-        saved = self._save_scan(img)
-        try:
-            res = self._scn().scan(img)
-        except Exception as e:  # keep the overlay alive and tell the user
-            res = {"error": f"Scan failed: {e}"}
-        if saved:
-            res["saved"] = saved
-        return res
-
-    def _save_scan(self, img, keep=15):
-        """Keep the last screenshots so a failed scan can be sent in and the scanner tuned."""
-        try:
-            os.makedirs(SCAN_DIR, exist_ok=True)
-            path = os.path.join(SCAN_DIR, time.strftime("scan-%Y%m%d-%H%M%S.png"))
-            cv2.imencode(".png", img)[1].tofile(path)
-            old = sorted(f for f in os.listdir(SCAN_DIR) if f.startswith("scan-"))
-            for f in old[:-keep]:
-                os.remove(os.path.join(SCAN_DIR, f))
-            return path
-        except Exception:
-            return None
-
-    def _grab(self):
-        was_visible = self._visible
-        if was_visible:               # keep the overlay out of the screenshot
-            self._window.hide()
-            time.sleep(0.25)
-        try:
-            shot, info = capture.grab(self._monitor, bring_to_front=was_visible)
-        finally:
-            if was_visible:
-                self._window.show()
-        return shot, info
-
-    def _push(self, result):
-        self._window.evaluate_js(f"window.onScanResult({json.dumps(result)})")
-
-    def _toggle(self):
-        if self._visible:
-            self._window.hide()
-        else:
-            self._window.show()
-        self._visible = not self._visible
-
-
-def update_data(api: Api):
-    """Rebuild the page from fresh MetaForge/wiki data, then reload the window.
-
-    Sources are cached in DATA_DIR/cache and re-downloaded when older than their limit
-    (events 3 h, items and quests 12 h, map markers and wiki 24 h)."""
+update = {"status": "skipped"}
+if "--no-update" not in sys.argv:
     try:
-        log = lambda m: print("[update]", m)
-        up = updater.check(DATA_DIR, log)
-        if up["status"] == "updated":
-            # use the fresh build.py / page template right away; the scanner switches on next launch
-            global CODE_ROOT, CODE_VERSION
-            CODE_ROOT, CODE_VERSION = updater.activate(DATA_DIR)
-        import build
-        page = build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR,
-                         assets=False, log=log)
-        api._window.load_url(pathlib.Path(page).resolve().as_uri())
-        time.sleep(1.5)
-        msg = {"updated": f"App updated to version {up.get('version')} and data refreshed",
-               "new_exe_needed": "A new version needs a fresh download from GitHub (see Help)"}.get(up["status"], "Data updated")
-        api._window.evaluate_js(f"toast({json.dumps(msg)})")
+        update = updater.check(DATA_DIR, log=logging.info)
+    except Exception as e:                     # never block the app on the update
+        logging.exception("update check crashed")
+        update = {"status": "failed", "error": str(e)}
+logging.info("update: %s", update)
+
+code_root, code_version = updater.code_root(DATA_DIR)
+MODULES = [("scanner", "overlay/scanner.py"), ("capture", "overlay/capture.py"),
+           ("build", "build.py"), ("app", "overlay/app.py")]
+if code_root:
+    os.environ["RAIDER_RES"] = code_root       # build.py reads web/ and sources/ from here
+    try:
+        for name, rel in MODULES:
+            path = os.path.join(code_root, *rel.split("/"))
+            if not os.path.exists(path):
+                continue
+            spec = importlib.util.spec_from_file_location(name, path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[name] = mod            # later "import scanner" etc. get this copy
+            spec.loader.exec_module(mod)
+            logging.info("loaded %s from %s", name, path)
     except Exception as e:
-        print("[update] failed:", e)
-        try:
-            api._window.evaluate_js(f"toast({json.dumps('Could not update data: ' + str(e)[:120])})")
-        except Exception:
-            pass
+        logging.exception("downloaded code failed to load, using the bundled copy")
+        for name, _ in MODULES:
+            sys.modules.pop(name, None)
+        os.environ.pop("RAIDER_RES", None)
+        code_root, code_version = None, updater.bundled_version()
+        update = {"status": "failed", "error": f"downloaded code failed to load: {e}"}
 
-
-def start_hotkeys(api: Api):
-    def scan():
-        threading.Thread(target=lambda: api._push(api.scan_screen()), daemon=True).start()
-
-    def new_vault():
-        api.reset_vault_session()
-        api._window.evaluate_js("toast('New vault scan started. Press F9 on each vault page.')")
-
-    hk = keyboard.GlobalHotKeys({"<f8>": api._toggle, "<f9>": scan, "<shift>+<f9>": new_vault})
-    hk.daemon = True
-    hk.start()
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--monitor", type=int, default=1, help="monitor to scan (1 = primary)")
-    ap.add_argument("--width", type=int, default=560)
-    ap.add_argument("--no-update", action="store_true", help="don't download fresh data on start")
-    a = ap.parse_args()
-
-    api = Api(a.monitor)
-    os.makedirs(PAGE_DIR, exist_ok=True)
-    if not os.path.exists(UI) or os.path.getmtime(BUNDLED_UI) > os.path.getmtime(UI):
-        shutil.copyfile(BUNDLED_UI, UI)               # first run, or the app itself was updated
-    with mss.mss() as sct:
-        mon = sct.monitors[min(a.monitor, len(sct.monitors) - 1)]
-    height = min(1000, mon["height"] - 80)
-    api._window = webview.create_window(
-        "Raider Logbook", UI, js_api=api, width=a.width, height=height,
-        x=mon["left"] + mon["width"] - a.width - 20, y=mon["top"] + 40,
-        on_top=True, resizable=True, background_color="#12161B")
-    threading.Thread(target=api._scn, daemon=True).start()   # warm up OCR models
-
-    def on_start():
-        start_hotkeys(api)
-        if not a.no_update:
-            threading.Thread(target=update_data, args=(api,), daemon=True).start()
-    webview.start(on_start, private_mode=False, storage_path=DATA_DIR)
-
-
-if __name__ == "__main__":
-    main()
+if "app" not in sys.modules:
+    import app  # noqa: E402,F401  (bundled copy; also tells PyInstaller to pack the app)
+sys.modules["app"].main({"app": updater.APP_VERSION, "code": code_version, "update": update, "log": LOG})

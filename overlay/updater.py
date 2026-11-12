@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import shutil
 import sys
 import urllib.request
 
-APP_VERSION = 1            # bump when the .exe itself must be rebuilt (new libraries, overlay.py changes)
+APP_VERSION = 2            # bump when the .exe itself must be rebuilt (new libraries, overlay.py changes)
 REPO_RAW = "https://raw.githubusercontent.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook/main/"
 UA = {"User-Agent": "RaiderLogbook-updater"}
 
@@ -37,6 +38,19 @@ def code_dir(data_dir):
     return os.path.join(data_dir, "code")
 
 
+def bundled_version():
+    return (_read_manifest(_bundled_root()) or {}).get("version", 0)
+
+
+def code_root(data_dir):
+    """The downloaded code folder if it is newer than the bundle and fits this .exe, else (None, bundled)."""
+    cd = code_dir(data_dir)
+    local = _read_manifest(cd)
+    if local and local.get("min_app", 1) <= APP_VERSION and local.get("version", 0) > bundled_version():
+        return cd, local["version"]
+    return None, bundled_version()
+
+
 def activate(data_dir):
     """Put downloaded code ahead of the bundled code on sys.path. Returns the folder build.py should
     read web/ and sources/ from."""
@@ -51,10 +65,11 @@ def activate(data_dir):
     return _bundled_root(), (bundled or {}).get("version", 0)
 
 
-def check(data_dir, log=print):
+def check(data_dir, log=print, timeout=10):
     """Download newer code files if there are any. Returns a dict describing what happened."""
     def get(path):
-        with urllib.request.urlopen(urllib.request.Request(REPO_RAW + path, headers=UA), timeout=30) as r:
+        url = f"{REPO_RAW}{path}?t={int(time.time())}"          # skip GitHub's 5-minute cache
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
             return r.read()
     try:
         remote = json.loads(get("update/manifest.json"))

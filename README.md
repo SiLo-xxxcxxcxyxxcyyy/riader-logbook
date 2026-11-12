@@ -25,6 +25,8 @@ Hotkeys:
 
 Run the game in **borderless windowed** mode so the overlay can stay on top.
 
+**Self-updating:** `RaiderLogbook.exe` is a small launcher (`overlay/overlay.py` + `overlay/updater.py`). On every launch it checks `update/manifest.json` on GitHub, downloads newer versions of the listed files (the app, scanner, screen capture, build script, page template and hand-kept data) to `%APPDATA%\RaiderLogbook\code`, and loads them by file path. Only changes to the launcher or to bundled libraries need a new .exe; bump `version` in the manifest with every change, and `min_app` when the files need a newer .exe. Each launch logs to `%APPDATA%\RaiderLogbook\app.log`.
+
 **Always up to date:** on every launch the overlay rebuilds its data in the background from MetaForge and the ARC Raiders Wiki and reloads when done (about 10–15 s the first time). Downloads are cached in `%APPDATA%\RaiderLogbook\cache` and refreshed when older than their limit: events 3 h, items and quests 12 h, map markers and wiki 24 h. Start with `--no-update` to skip it.
 
 The scanner only takes screenshots, like OBS or Discord. It does not read game memory or files and never sends input to the game.

@@ -817,7 +817,8 @@ document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=
   const gid=e.target.dataset&&e.target.dataset.g;if(gid){S.gOpen=S.gOpen||{};const was=!!S.gOpen[gid];if(e.target.open)S.gOpen[gid]=1;else delete S.gOpen[gid];save();if(e.target.open&&!was)render()}},true);
 {const m=D.meta;if(m)$("#foot").innerHTML=`Data updated ${esc(new Date(m.built).toLocaleString())} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
 window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render();
-  try{api().app_info().then(i=>{if(!i)return;const f=$("#foot");if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · code version ${esc(i.code)}</span> · `)})}catch(e){}});
+  try{api().app_info().then(i=>{if(!i)return;const f=$("#foot");const up={updated:"just updated",current:"up to date",unreachable:"couldn't reach GitHub",failed:"update failed",new_exe_needed:"new .exe needed",skipped:"update skipped"}[i.update]||i.update||"";
+    if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · code version ${esc(i.code)}${up?` · ${esc(up)}`:""}${i.update_error?` (${esc(String(i.update_error).slice(0,140))})`:""}</span><br>`)})}catch(e){}});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
 render();
