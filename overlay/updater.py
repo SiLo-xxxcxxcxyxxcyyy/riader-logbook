@@ -1,4 +1,4 @@
-"""Self-update for Raider Logbook's code files.
+"""Self-update for Raider Logbook's data files (page template and hand-kept JSON only, never code).
 
 The .exe bundles Python, the libraries and the scanner icons, which rarely change. The parts that
 change often (the page template, build.py, the scanner, the hand-kept data in sources/) are listed
@@ -16,7 +16,7 @@ import shutil
 import sys
 import urllib.request
 
-APP_VERSION = 2            # bump when the .exe itself must be rebuilt (new libraries, overlay.py changes)
+APP_VERSION = 3            # bump when the .exe itself must be rebuilt (new libraries, overlay.py changes)
 REPO_RAW = "https://raw.githubusercontent.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook/main/"
 UA = {"User-Agent": "RaiderLogbook-updater"}
 
@@ -78,13 +78,18 @@ def check(data_dir, log=print, timeout=10):
     cd = code_dir(data_dir)
     current = max((_read_manifest(cd) or {}).get("version", 0), (_read_manifest(_bundled_root()) or {}).get("version", 0))
     if remote.get("version", 0) <= current:
-        return {"status": "current", "version": current}
+        out = {"status": "current", "version": current}
+        if remote.get("latest_app", 0) > APP_VERSION:
+            out["new_app"] = remote.get("download")
+        return out
     if remote.get("min_app", 1) > APP_VERSION:
-        return {"status": "new_exe_needed", "version": remote["version"]}
+        return {"status": "new_exe_needed", "version": remote["version"], "download": remote.get("download")}
     tmp = cd + ".new"
     shutil.rmtree(tmp, ignore_errors=True)
     try:
-        for f in remote["files"] + ["update/manifest.json"]:
+        # only data: anything that isn't plain text/markup is ignored, so no program code is ever fetched
+        files = [f for f in remote["files"] if f.lower().endswith((".html", ".json", ".txt"))]
+        for f in files + ["update/manifest.json"]:
             dst = os.path.join(tmp, *f.split("/"))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             data = get(f)
@@ -96,5 +101,8 @@ def check(data_dir, log=print, timeout=10):
         return {"status": "failed", "error": str(e)}
     shutil.rmtree(cd, ignore_errors=True)
     os.replace(tmp, cd)
-    log(f"code updated to version {remote['version']}")
-    return {"status": "updated", "version": remote["version"], "from": current}
+    log(f"data updated to version {remote['version']}")
+    res = {"status": "updated", "version": remote["version"], "from": current}
+    if remote.get("latest_app", 0) > APP_VERSION:
+        res["new_app"] = remote.get("download")
+    return res

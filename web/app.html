@@ -688,7 +688,7 @@ V.help=()=>{
     <li>Run the game in <b>borderless windowed</b> mode so the overlay can stay on top.</li>
     <li>The scanner only takes screenshots. It never reads game memory or files and never sends input to the game.</li>
     <li>Check a scan before applying it: low-confidence matches are shown in red, and you can fix counts by hand.</li>
-    <li><b>Updates:</b> on every launch the app checks GitHub for a newer version of itself and downloads fresh data (items, quests, map markers, events) in the background, then reloads. Small fixes arrive this way; you only download a new .exe when the app tells you to.</li>
+    <li><b>Updates:</b> on every launch the app downloads fresh data (items, quests, map markers, events) and the latest page from GitHub in the background, then reloads. It never downloads program code; when the app itself has a new version, a banner at the top gives you the download link.</li>
     <li><b>Scan didn't work?</b> Every scan is saved as a screenshot. Open the Scan tab and press <i>Open scans folder</i> to find it and send it in, so the scanner can be tuned for your screen.</li>
     <li><b>Wrong quests after a scan?</b> Press <i>Undo last change</i> or <i>Reset all quests</i> on the Quests tab, or <i>Not done, with everything after it</i> on a single quest.</li></ul>`)}
   ${sec("data","Your data",`<p style="margin:0">Progress is saved in this browser or app only. To move it, use <i>Backup and transfer</i> at the bottom of the ${go("vault","Vault")} tab: create a backup, copy it, and restore it on the other device.</p>`)}
@@ -818,7 +818,8 @@ document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=
 {const m=D.meta;if(m)$("#foot").innerHTML=`Data updated ${esc(new Date(m.built).toLocaleString())} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
 window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render();
   try{api().app_info().then(i=>{if(!i)return;const f=$("#foot");const up={updated:"just updated",current:"up to date",unreachable:"couldn't reach GitHub",failed:"update failed",new_exe_needed:"new .exe needed",skipped:"update skipped"}[i.update]||i.update||"";
-    if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · code version ${esc(i.code)}${up?` · ${esc(up)}`:""}${i.update_error?` (${esc(String(i.update_error).slice(0,140))})`:""}</span><br>`)})}catch(e){}});
+    if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · data version ${esc(i.code)}${up?` · ${esc(up)}`:""}${i.update_error?` (${esc(String(i.update_error).slice(0,140))})`:""}</span><br>`);
+    if(i.new_app){const m=$("#main");if(m)m.insertAdjacentHTML("afterbegin",`<div class="panel row" style="justify-content:space-between;margin-bottom:12px;border-color:var(--accent)"><span>A new version of the app is available.</span><a class="btn pri" href="${esc(i.new_app)}" target="_blank" rel="noopener">Download it</a></div>`)}})}catch(e){}});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
 render();

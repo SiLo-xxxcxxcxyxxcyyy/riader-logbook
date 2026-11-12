@@ -97,7 +97,8 @@ class Api:
     def app_info(self):
         up = LAUNCH.get("update") or {}
         return {"app": LAUNCH.get("app"), "code": LAUNCH.get("code"), "scans": SCAN_DIR,
-                "update": up.get("status"), "update_error": up.get("error"), "log": LAUNCH.get("log")}
+                "update": up.get("status"), "update_error": up.get("error"), "log": LAUNCH.get("log"),
+                "new_app": up.get("new_app") or (up.get("download") if up.get("status") == "new_exe_needed" else None)}
 
     def reset_vault_session(self):
         self._scn().reset_vault_session()

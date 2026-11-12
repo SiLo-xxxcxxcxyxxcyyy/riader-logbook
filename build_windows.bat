@@ -10,7 +10,7 @@ if not exist data\arcraiders-data git clone --depth 1 https://github.com/RaidThe
 python build.py data\arcraiders-data || exit /b 1
 pyinstaller --noconfirm --windowed --noupx --name RaiderLogbook --version-file version_info.txt --distpath release ^
   --add-data "dist\index.html;ui" --add-data "overlay\assets;assets" ^
-  --add-data "web\app.html;web" --add-data "sources;sources" --add-data "update;update" --paths . --hidden-import build --hidden-import app --hidden-import capture --hidden-import scanner ^
+  --add-data "web\app.html;web" --add-data "sources;sources" --add-data "update;update" --paths . --hidden-import build ^
   --collect-all rapidocr_onnxruntime --collect-all webview --collect-all pythonnet --collect-all clr_loader ^
   overlay\overlay.py || exit /b 1
 echo.

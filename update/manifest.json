@@ -1,12 +1,10 @@
 {
- "version": 7,
+ "version": 8,
  "min_app": 1,
+ "latest_app": 3,
+ "download": "https://github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook/actions/workflows/build-windows.yml",
  "files": [
   "web/app.html",
-  "build.py",
-  "overlay/scanner.py",
-  "overlay/capture.py",
-  "overlay/app.py",
   "sources/skill_builds.json",
   "sources/hub_guides.json",
   "sources/map_align.json"
