@@ -1,5 +1,5 @@
 {
- "version": 4,
+ "version": 5,
  "min_app": 1,
  "files": [
   "web/app.html",

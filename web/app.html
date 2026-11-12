@@ -307,7 +307,7 @@ function questBlock(id,compact){
    ${req.length?`<div class="row" style="font-size:13px"><span class="mut">Hand in:</span>${req.map(([it,n])=>`<span class="chip" style="color:${have(it)>=n?"var(--sell)":"var(--warn)"}">${itemBtn(it)} ${Math.min(have(it),n)}/${n}</span>`).join("")}</div>`:""}
    ${q.rw?`<div class="mut" style="font-size:13px">Reward: ${Object.entries(q.rw).map(([it,n])=>`${n}× ${itemBtn(it)}`).join(", ")}</div>`:""}
    ${guideBlock(id)}
-   <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>${!compact&&q.nx?`<button class="btn sm" data-undoneafter="${id}">Not done, with everything after it</button>`:""}`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
+   <div class="row">${QMARK[id]?`<button class="btn sm" data-showq="${id}">Show on map</button>`:""}${st==="avail"&&!(S.active&&S.active[id])?`<button class="btn sm" data-done="${id}" title="It's not in your log because you finished it">Not in my quest log</button>`:""}${st==="done"?`<button class="btn sm" data-undone="${id}">Mark not done</button>${!compact&&q.nx?`<button class="btn sm" data-undoneafter="${id}">Not done, with everything after it</button>`:""}`:`<button class="btn sm pri" data-done="${id}">Done</button>`}
    ${!compact&&st!=="done"?`<button class="btn sm" data-doneall="${id}">I'm on this one (mark all before it done)</button>`:""}
    ${!compact&&st==="locked"&&needsConfirm(id)?`<button class="btn sm" data-have="${id}">I have this quest</button><span class="mut" style="font-size:12px">${q.hid?"Unlocks through something you do in game.":"The data doesn't say what unlocks it."}</span>`:""}
    ${S.active&&S.active[id]&&st!=="done"?`<button class="btn sm" data-nothave="${id}">I don't have this one</button>`:""}
@@ -336,6 +336,7 @@ V.quests=()=>{
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Quests · ${counts.done}/${Object.keys(Q).length} done</div><h1>Your progress</h1>
    <p class="mut" style="margin:0;max-width:65ch">Find the quest you're on in the game and press “I'm on this one”. Everything before it is marked done, so the app knows what's available.</p>
+   ${S.qf==="avail"&&!Object.keys(S.active||{}).length?`<p class="note" style="margin:6px 0 0">This list shows quests you can take <b>now</b>, according to your progress. Is one missing from your log in game? Then you've finished it: press <i>Not in my quest log</i>. Faster: open your active quests at their traders, press <span class="kbd">F9</span> on each and <i>Add to my progress</i>, and everything before them is marked done.</p>`:""}
    <div class="row" style="margin-top:6px">${S.doneUndo?`<button class="btn sm pri" id="undoQuests">Undo last change</button>`:""}<button class="btn sm" id="resetQuests">Reset all quests</button></div></div>
    <div class="row"><div class="filters">${[["avail","Available"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
    <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
