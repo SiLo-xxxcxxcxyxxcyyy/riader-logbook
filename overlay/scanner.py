@@ -107,7 +107,7 @@ class Scanner:
         for r in keep:                                   # non-maximum suppression
             if all(_iou(r, o) < 0.4 for o in out):
                 out.append(r)
-        return _snap_to_grid(out)
+        return _snap_to_grid(_largest_group(out))
 
     def classify(self, slot_bgr):
         f = self._feature(slot_bgr)
@@ -187,14 +187,34 @@ class Scanner:
                 s["count"] = best[0]
 
     def reset_vault_session(self):
-        self._pages, self._totals, self._unknown = [], {}, 0
+        """Start a new scan session (vault pages and quests are collected until the next reset)."""
+        self._pages, self._totals, self._unknown, self._last_rows = [], {}, 0, []
+        self._quests = {}
+
+    @staticmethod
+    def _rows(slots):
+        size = float(np.median([s["box"][3] for s in slots]))
+        rows = {}
+        for s in slots:
+            rows.setdefault(round(s["box"][1] / size), []).append(s)
+        return [sorted(r, key=lambda s: s["box"][0]) for _, r in sorted(rows.items())]
 
     def _add_vault_page(self, page):
+        """Add a page, skipping rows already counted when the stash was only scrolled a bit."""
         sig = tuple(s["id"] for s in page["slots"])
         if sig in self._pages:
             return False
+        rows = self._rows(page["slots"])
+        ids = [tuple(s["id"] for s in r) for r in rows]
+        last = self._last_rows
+        skip = 0
+        for k in range(min(len(ids), len(last)), 0, -1):         # largest overlap: our first k rows == their last k
+            if ids[:k] == last[-k:]:
+                skip = k
+                break
         self._pages.append(sig)
-        for s in page["slots"]:
+        self._last_rows = ids
+        for s in [s for r in rows[skip:] for s in r]:
             t = self._totals.setdefault(s["id"], {"id": s["id"], "count": 0, "score": 1.0})
             t["count"] += s["count"]
             t["score"] = min(t["score"], round(s["score"], 3))
@@ -212,7 +232,7 @@ class Scanner:
                 sc = fuzz.ratio(t, qn)
                 if sc < QUEST_MIN and len(t) > len(qn) + 3:
                     sc = fuzz.token_set_ratio(t, qn) - 4      # title merged with other text on the same line
-                if sc >= QUEST_MIN and sc > best.get(qid, {}).get("score", 0):
+                if sc >= QUEST_MIN and sc > best.get(qid, {}).get("score", 0) and len(t) <= len(qn) * 2 + 12:
                     best[qid] = {"id": qid, "score": float(sc), "text": text}
         return sorted(best.values(), key=lambda q: -q["score"])
 
@@ -223,18 +243,47 @@ class Scanner:
         small = img if w <= 1920 else cv2.resize(img, (1920, int(h * 1920 / w)), interpolation=cv2.INTER_AREA)
         lines = self._read(small)
         quests = self.scan_quests(lines)
-        if len(quests) >= 2 or (quests and not self.find_slots(img)):
-            return {"kind": "quests", "quests": quests}
+        slots = self.find_slots(img)
+        if quests and len(slots) < 8:                            # a quest screen (reward icons are a few slots)
+            new = [q["id"] for q in quests if q["id"] not in self._quests]
+            for q in quests:
+                if q["score"] > self._quests.get(q["id"], {}).get("score", 0):
+                    self._quests[q["id"]] = q
+            return {"kind": "quests", "quests": sorted(self._quests.values(), key=lambda q: -q["score"]), "added": new}
         page = self.scan_vault(img)
         if page:
             added = self._add_vault_page(page)
             items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
             return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": self._unknown,
                     "duplicate": not added}
-        slots = self.find_slots(img)
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
                 "debug": {"size": f"{w}x{h}", "text_lines": len(lines), "slots_found": len(slots),
                           "slot_size": int(np.median([s[2] for s in slots])) if slots else 0}}
+
+
+def _largest_group(rects):
+    """Keep the biggest cluster of touching slots (the stash grid), dropping loadout/backpack
+    slots and reward icons elsewhere on the screen."""
+    if len(rects) < 2:
+        return rects
+    size = float(np.median([w for _, _, w, _ in rects]))
+    c = [(x + w / 2, y + h / 2) for x, y, w, h in rects]
+    parent = list(range(len(rects)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i in range(len(rects)):
+        for j in range(i + 1, len(rects)):
+            dx, dy = abs(c[i][0] - c[j][0]), abs(c[i][1] - c[j][1])
+            if (dx < size * 1.35 and dy < size * 0.3) or (dy < size * 1.35 and dx < size * 0.3):
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(len(rects)):
+        groups.setdefault(find(i), []).append(rects[i])
+    return max(groups.values(), key=len)
 
 
 def _snap_to_grid(rects):

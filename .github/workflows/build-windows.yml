@@ -18,7 +18,9 @@ jobs:
         with:
           name: RaiderLogbook-windows
           path: release/RaiderLogbook
-      - name: Synthetic scanner test
-        run: python tests/test_scanner.py data/arcraiders-data
+      - name: Scanner tests
+        run: |
+          python tests/test_real.py
+          python tests/test_scanner.py data/arcraiders-data
         env:
           PYTHONIOENCODING: utf-8

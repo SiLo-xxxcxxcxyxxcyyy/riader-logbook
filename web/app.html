@@ -404,8 +404,8 @@ V.scan=()=>{
     res=`<div class="panel stack"><div class="eyebrow">Last scan · quest log</div><h2>${plural(r.quests.length,"quest")} recognised</h2>
     ${r.quests.length?`<p class="mut" style="margin:0;font-size:13px">Untick anything the scanner got wrong. Low matches start unticked.</p>
     <ul class="plain scanlist">${r.quests.map((q,i)=>`<li><label class="row"><input type="checkbox" data-scanq="${i}" ${q.use!==false?"checked":""}><span>${esc(Q[q.id]?.n||q.id)}</span><span class="conf ${q.score<90?"low":""}">${Math.round(q.score)}% · read “${esc(q.text)}”</span></label></li>`).join("")}</ul>
-    ${(()=>{const pv=questScanPreview();return `<p class="note">These become your active quests. ${pv.done} quest${pv.done===1?"":"s"} before them will be marked done${pv.undone?`, and ${pv.undone} you had marked done will be reset`:""}.</p>`})()}
-    <div class="row"><button class="btn pri" id="applyQuests">Set my progress to this</button><button class="btn" id="applyQuestsAdd">Only add, keep the rest</button><button class="btn" id="dropScan">Discard</button></div>`:`<p class="mut">No quest names found. Open the quest log in the game so the quest titles are visible, then scan again.</p>`}</div>`;
+    ${(()=>{const pv=questScanPreview(false);return `<p class="note">The game shows one quest at a time: open each active quest at its trader and press <span class="kbd">F9</span>, they collect here. Adding marks ${pv.added} more quest${pv.added===1?"":"s"} before them as done${pv.undone?` and resets ${pv.undone}`:""}.</p>`})()}
+    <div class="row"><button class="btn pri" id="applyQuestsAdd">Add to my progress</button><button class="btn" id="applyQuests" title="Use this only after scanning every active quest">Replace my progress with these</button><button class="btn" id="dropScan">Discard</button></div>`:`<p class="mut">No quest names found. Open the quest log in the game so the quest titles are visible, then scan again.</p>`}</div>`;
   }else if(r&&r.kind==="error"){
     const d=r.debug||{};
     res=`<div class="panel stack"><div class="eyebrow">Last scan</div><h2>Nothing recognised</h2>
@@ -432,7 +432,7 @@ V.scan=()=>{
    <div class="panel stack desk-only"><h2>Hotkeys</h2>
     <div class="kv"><dt><span class="kbd">F8</span></dt><dd>Show or hide the overlay</dd>
     <dt><span class="kbd">F9</span></dt><dd>Scan the screen. Works on the quest log and on vault pages; the app works out which one it is.</dd>
-    <dt><span class="kbd">Shift</span> + <span class="kbd">F9</span></dt><dd>Start a new vault scan, then scan each vault page with F9</dd></div>
+    <dt><span class="kbd">Shift</span> + <span class="kbd">F9</span></dt><dd>Start a new scan session: vault pages and quests collect until you press it again</dd></div>
     <div class="row"><button class="btn pri" id="scanNow">Scan screen now</button><button class="btn" id="scanFile">Scan a screenshot file…</button><button class="btn" id="scanReset">Start new vault scan</button></div>
     <p class="note">Run the game in borderless windowed mode so the overlay can sit on top of it.</p></div>
    ${res}</div>`;
@@ -657,7 +657,7 @@ V.help=()=>{
   <div class="stack" style="gap:4px"><div class="eyebrow">Help</div><h1>How to use Raider Logbook</h1>
   <p class="mut" style="margin:0;max-width:65ch">Raider Logbook tracks your quests, vault and skill points, and tells you where to drop, what to loot and what to sell. Five minutes of setup, then it mostly runs itself.</p></div>
   ${sec("start","Getting started",steps([
-    `<b>Set your quest progress.</b> Open ${go("quests","Quests")}, find the quest you're on in the game and press <i>I'm on this one</i>. Everything before it is marked done. In the desktop app you can instead open the quest log in game and press <span class="kbd">F9</span>.`,
+    `<b>Set your quest progress.</b> Open ${go("quests","Quests")}, find the quest you're on in the game and press <i>I'm on this one</i>. Everything before it is marked done. In the desktop app you can instead open each active quest at its trader in game and press <span class="kbd">F9</span> on each one, then <i>Add to my progress</i>.`,
     `<b>Set your workshop levels.</b> On ${go("needs","Shopping list")}, pick the level of each bench and station. That's what tells the app which materials you still need.`,
     `<b>Fill in your vault.</b> On ${go("vault","Vault")}, add items by name, or in the desktop app press <span class="kbd">Shift</span>+<span class="kbd">F9</span> and then <span class="kbd">F9</span> on each vault page.`,
     `<b>Before each raid, open ${go("lobby","Lobby")}.</b> It shows which map has most of your quests, what events are on, where your quest spots are and a loot route for what you're missing.`]))}
@@ -699,19 +699,25 @@ V.help=()=>{
 window.onScanResult=r=>{
   if(!r){return}
   if(r.error){S.scan={kind:"error",...r};S.tab="scan";render();toast("Nothing recognised");return}
-  if(r.kind==="quests")r.quests.forEach(q=>q.use=q.score>=90);
+  if(r.kind==="quests"){const prev={};(S.scan&&S.scan.kind==="quests"?S.scan.quests:[]).forEach(q=>prev[q.id]=q.use);r.quests.forEach(q=>q.use=prev[q.id]??q.score>=90)}
   S.scan=r;S.tab="scan";render();
   toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?`${plural(r.items.length,"item type")} recognised`:"Nothing recognised");
 };
+// Active quests you've confirmed by scanning are never marked done, nor anything after them.
+// That matters for quests with several possible previous quests.
 function questScanTarget(replace){
-  const ids=S.scan.quests.filter(q=>q.use!==false).map(q=>q.id),done=replace?{}:{...S.done};
-  ids.forEach(id=>ancestors(id).forEach(a=>done[a]=true));ids.forEach(id=>delete done[id]);return done;
+  const scanned=S.scan.quests.filter(q=>q.use!==false).map(q=>q.id);
+  const active=new Set(replace?scanned:[...Object.keys(S.active||{}),...scanned]);
+  const done=replace?{}:{...S.done};
+  active.forEach(id=>ancestors(id).forEach(a=>done[a]=true));
+  active.forEach(id=>{delete done[id];descendants(id).forEach(x=>delete done[x])});
+  return{done,active};
 }
-function questScanPreview(){const t=questScanTarget(true);return{done:Object.keys(t).length,undone:Object.keys(S.done).filter(k=>!t[k]).length}}
+function questScanPreview(replace){const t=questScanTarget(replace).done;return{added:Object.keys(t).filter(k=>!S.done[k]).length,undone:Object.keys(S.done).filter(k=>!t[k]).length}}
 function snapshotDone(){S.doneUndo=JSON.parse(JSON.stringify(S.done))}
 function applyQuests(replace){
   if(!S.scan.quests.some(q=>q.use!==false)){toast("Tick at least one quest");return}
-  snapshotDone();S.done=questScanTarget(replace);
+  snapshotDone();const t=questScanTarget(replace);S.done=t.done;S.active=Object.fromEntries([...t.active].map(i=>[i,1]));
   S.scan=null;S.tab="lobby";render();toast("Quest progress updated. Undo it on the Quests tab.");
 }
 function descendants(id,acc=new Set()){(Q[id]?.nx||[]).forEach(n=>{if(Q[n]&&!acc.has(n)){acc.add(n);descendants(n,acc)}});return acc}
@@ -737,7 +743,7 @@ document.addEventListener("click",e=>{
   if(d.tab){S.tab=d.tab;try{history.replaceState(null,"","#"+d.tab)}catch(_){}render();window.scrollTo(0,0)}
   else if(d.map){S.lobbyMap=d.map;S.lobbyImg=null;render()}
   else if(d.img){S.lobbyImg=d.img;render()}
-  else if(d.done){S.done[d.done]=true;render();toast("Quest done")}
+  else if(d.done){S.done[d.done]=true;if(S.active)delete S.active[d.done];render();toast("Quest done")}
   else if(d.undone){delete S.done[d.undone];render()}
   else if(d.doneall){snapshotDone();ancestors(d.doneall).forEach(a=>S.done[a]=true);delete S.done[d.doneall];render();toast("Progress saved")}
   else if(d.qf){S.qf=d.qf;render()}

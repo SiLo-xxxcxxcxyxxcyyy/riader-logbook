@@ -103,6 +103,7 @@ def main():
     q_ok = q_tot = q_false = 0
     for t in range(4):
         img, truth = fake_quest_log(sc, rng)
+        sc.reset_vault_session()
         if OUT:
             cv2.imwrite(os.path.join(OUT, f"quests{t}.jpg"), img)
         res = sc.scan(img)
