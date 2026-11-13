@@ -10,6 +10,7 @@ Updated through update/manifest.json like the scanner, so capture fixes need no 
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import mss
@@ -93,6 +94,34 @@ def enable_dpi_awareness():
             pass
 
 
+_LAST = {"hash": None}
+
+
+def _dxgi_grab(region):
+    """Capture through DXGI Desktop Duplication (what recording tools use). Unlike GDI it sees the
+    current frame of fullscreen/borderless games instead of an old, frozen one."""
+    import dxcam
+    import mss as _mss
+    with _mss.mss() as sct:                      # find the monitor that holds the region
+        cx, cy = region["left"] + region["width"] // 2, region["top"] + region["height"] // 2
+        mons = sct.monitors[1:]
+        idx = next((i for i, m in enumerate(mons) if m["left"] <= cx < m["left"] + m["width"]
+                    and m["top"] <= cy < m["top"] + m["height"]), 0)
+        m = mons[idx]
+    cam = dxcam.create(output_idx=idx, output_color="BGR")     # dxcam keeps one camera per output; reuse it
+    l, t = region["left"] - m["left"], region["top"] - m["top"]
+    box = (max(0, l), max(0, t), min(m["width"], l + region["width"]), min(m["height"], t + region["height"]))
+    out = {}
+    cam.start(region=box, target_fps=30, video_mode=True)
+    try:
+        th = threading.Thread(target=lambda: out.setdefault("f", cam.get_latest_frame()), daemon=True)
+        th.start()
+        th.join(2.0)                                 # get_latest_frame blocks until a frame arrives
+    finally:
+        cam.stop()                                   # also releases a still-waiting get_latest_frame
+    return out.get("f")
+
+
 def grab(monitor=1, bring_to_front=False):
     """Screenshot of the game window if it can be found, else of the given monitor.
     Returns (BGR image, info dict)."""
@@ -122,8 +151,24 @@ def grab(monitor=1, bring_to_front=False):
     with mss.mss() as sct:
         if region is None:
             mon = sct.monitors[min(monitor, len(sct.monitors) - 1)]
-            region = mon
+            region = {k: mon[k] for k in ("left", "top", "width", "height")}
             info["size"] = f"{mon['width']}x{mon['height']}"
             info["note"] = "Game window not found, scanned the whole monitor."
-        shot = np.array(sct.grab(region))[:, :, :3]
-    return np.ascontiguousarray(shot), info
+    shot = None
+    if os.name == "nt":
+        try:
+            shot = _dxgi_grab(region)
+            info["method"] = "dxgi"
+        except Exception as e:
+            info["dxgi_error"] = str(e)[:200]
+    if shot is None:
+        with mss.mss() as sct:
+            shot = np.array(sct.grab(region))[:, :, :3]
+        info["method"] = "gdi"
+    shot = np.ascontiguousarray(shot)
+    h = hash(shot[::16, ::16].tobytes())
+    if h == _LAST["hash"]:
+        info["warning"] = (info.get("warning", "") + " The screenshot is identical to the previous scan: "
+                           "if you scrolled or switched tabs, the game picture didn't refresh.").strip()
+    _LAST["hash"] = h
+    return shot, info

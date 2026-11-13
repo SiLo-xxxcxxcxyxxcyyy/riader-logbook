@@ -7,3 +7,4 @@ rapidocr>=3.0
 onnxruntime>=1.20
 rapidfuzz>=3.0
 pillow>=10.0
+dxcam>=0.0.5; sys_platform == "win32"

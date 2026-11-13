@@ -34,7 +34,7 @@ def _norm(s: str) -> str:
 
 
 class Scanner:
-    def __init__(self, assets: str = ASSETS):
+    def __init__(self, assets: str = ASSETS, learned_dir: str | None = None):
         game = json.load(open(os.path.join(assets, "game.json"), encoding="utf-8"))
         self.quests = game["quests"]
         self.items = game["items"]
@@ -42,6 +42,14 @@ class Scanner:
         refs = np.load(os.path.join(assets, "refs.npz"))
         self.ref_ids = [str(x) for x in refs["ids"]]
         self.ref_feat = np.stack([self._feature(im) for im in refs["imgs"]])
+        # icons you taught the app (items missing from the icon set, e.g. new ones): <item_id>__<key>.png
+        self.learned_dir = learned_dir
+        if learned_dir and os.path.isdir(learned_dir):
+            for fn in sorted(os.listdir(learned_dir)):
+                if fn.endswith(".png") and "__" in fn:
+                    im = cv2.imdecode(np.fromfile(os.path.join(learned_dir, fn), np.uint8), cv2.IMREAD_COLOR)
+                    if im is not None:
+                        self._add_ref(fn.split("__")[0], im)
         self._ocr = None
         self.reset_vault_session()
 
@@ -108,6 +116,37 @@ class Scanner:
                 out.append(r)
         return _snap_to_grid(_largest_group(out))
 
+    def _add_ref(self, item_id, slot_bgr):
+        self.ref_ids.append(item_id)
+        self.ref_feat = np.vstack([self.ref_feat, self._feature(slot_bgr)[None, :]])
+
+    @staticmethod
+    def _slot_key(slot_bgr):
+        """Same-looking slots (the same unknown item) get the same key."""
+        g = cv2.cvtColor(cv2.resize(slot_bgr, (64, 64), interpolation=cv2.INTER_AREA)[4:46, 4:60], cv2.COLOR_BGR2GRAY)
+        g = cv2.resize(g, (8, 6), interpolation=cv2.INTER_AREA)
+        return "".join("1" if v > g.mean() else "0" for v in g.ravel())
+
+    @staticmethod
+    def _is_empty(slot_bgr):
+        h, w = slot_bgr.shape[:2]
+        inner = slot_bgr[int(h * .15):int(h * .85), int(w * .15):int(w * .85)]
+        return inner.std() < 9
+
+    def learn(self, key, item_id):
+        """Remember an unknown slot as item_id (saved for future scans) and move it into the totals."""
+        u = self._unknowns.pop(key, None)
+        if u is None:
+            return None
+        crop = self._unknown_crops.pop(key)
+        self._add_ref(item_id, crop)
+        if self.learned_dir:
+            os.makedirs(self.learned_dir, exist_ok=True)
+            cv2.imencode(".png", crop)[1].tofile(os.path.join(self.learned_dir, f"{item_id}__{key[:16]}.png"))
+        t = self._totals.setdefault(item_id, {"id": item_id, "count": 0, "score": 1.0})
+        t["count"] += u["count"]
+        return self._vault_result()
+
     def classify(self, slot_bgr):
         f = self._feature(slot_bgr)
         sims = self.ref_feat @ f
@@ -145,16 +184,19 @@ class Scanner:
         found, unknown = [], 0
         for (x, y, w, h) in slots:
             crop = img[y:y + h, x:x + w]
-            if crop.std() < 8:                            # empty slot
+            if crop.size == 0 or self._is_empty(crop):     # empty slot (just the frame)
                 continue
             ((iid, score), (alt, alt_score)), (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
             if score < MATCH_MIN:
                 unknown += 1
+                c = img[y:y + h, x:x + w].copy()
+                found.append({"id": "?" + self._slot_key(c), "unknown": True, "crop": c, "score": score,
+                              "box": (x, y, w, h), "count": 1})
                 continue
             if score - alt_score < 0.02:            # near-identical icons (e.g. tier variants): flag for review
                 score = min(score, 0.7)
             found.append({"id": iid, "score": score, "box": (x, y, w, h), "count": 1})
-        if len(found) < 2:
+        if sum(1 for f in found if not f.get("unknown")) < 1 and len(found) < 3:
             return None
         self._read_counts(img, found)
         return {"slots": found, "unknown": unknown}
@@ -162,9 +204,7 @@ class Scanner:
     def _read_counts(self, img, found):
         """Read the stack count of each slot with recognition-only OCR on the slot corners."""
         for s in found:
-            st = self.items.get(s["id"], {}).get("st") or 1
-            if st <= 1:
-                continue
+            st = 9999 if s.get("unknown") else (self.items.get(s["id"], {}).get("st") or 1)
             x, y, w, h = s["box"]
             best = None
             for (ya, yb, xa, xb) in ((0.70, 1.0, 0.45, 1.0), (0.0, 0.30, 0.45, 1.0)):   # bottom-right, top-right
@@ -178,16 +218,19 @@ class Scanner:
                 for r in res or []:
                     text, conf = r[-2], float(r[-1])
                     t = text.strip().replace("O", "0").replace("o", "0").replace("l", "1").replace("I", "1")
-                    m = re.fullmatch(r"[x×X]?\s*(\d{1,4})\s*[x×X]?", t)
-                    if m and 1 <= int(m.group(1)) <= max(st, 1) and conf > 0.3:
+                    m = re.fullmatch(r"([x×X])?\s*(\d{1,4})\s*[x×X]?", t)
+                    # the game writes stack counts as "×24"; bare digits may be a misread tier numeral (II -> 11)
+                    limit = 9999 if (m and m.group(1)) else max(st, 1)
+                    if m and 1 <= int(m.group(2)) <= limit and conf > 0.3:
                         if best is None or conf > best[1]:
-                            best = (int(m.group(1)), conf)
+                            best = (int(m.group(2)), conf)
             if best:
                 s["count"] = best[0]
 
     def reset_vault_session(self):
         """Start a new scan session (vault pages and quests are collected until the next reset)."""
         self._pages, self._totals, self._unknown, self._last_rows = [], {}, 0, []
+        self._unknowns, self._unknown_crops = {}, {}
         self._quests = {}
 
     @staticmethod
@@ -214,11 +257,22 @@ class Scanner:
         self._pages.append(sig)
         self._last_rows = ids
         for s in [s for r in rows[skip:] for s in r]:
+            if s.get("unknown"):
+                key = s["id"][1:]
+                u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"])})
+                u["count"] += s["count"]
+                self._unknown_crops.setdefault(key, s["crop"])
+                continue
             t = self._totals.setdefault(s["id"], {"id": s["id"], "count": 0, "score": 1.0})
             t["count"] += s["count"]
             t["score"] = min(t["score"], round(s["score"], 3))
         self._unknown += page["unknown"]
         return True
+
+    def _vault_result(self):
+        items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
+        unk = list(self._unknowns.values())
+        return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": len(unk), "unknowns": unk}
 
     # ---------- quests ----------
     def scan_quests(self, lines):
@@ -252,12 +306,16 @@ class Scanner:
         page = self.scan_vault(img)
         if page:
             added = self._add_vault_page(page)
-            items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
-            return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": self._unknown,
-                    "duplicate": not added}
+            return {**self._vault_result(), "duplicate": not added}
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
                 "debug": {"size": f"{w}x{h}", "text_lines": len(lines), "slots_found": len(slots),
                           "slot_size": int(np.median([s[2] for s in slots])) if slots else 0}}
+
+
+def _thumb(crop, size=72):
+    import base64
+    t = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
+    return "data:image/png;base64," + base64.b64encode(cv2.imencode(".png", t)[1].tobytes()).decode()
 
 
 def _ocr_engine(text_score=None):

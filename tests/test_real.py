@@ -16,3 +16,11 @@ ids = {i["id"] for i in v["items"]}
 for expected in ("medium_shield", "renegade_ii", "hullcracker_iv", "anvil_i", "anvil_ii", "ferro_iii"):
     assert expected in ids, (expected, ids)
 print(f"real screenshots OK: quest recognised, vault {len(v['items'])} item types / {slots} pieces")
+
+# second stash view (materials tab): new items without reference icons come back as "unknowns"
+sc.reset_vault_session()
+m = sc.scan(cv2.imread(os.path.join(ROOT, "tests", "real", "vault_materials_1920.png")))
+seeds = next(i["count"] for i in m["items"] if i["id"] == "assorted_seeds")
+assert seeds == 463, seeds
+assert sorted(u["count"] for u in m["unknowns"]) == [1, 6], m["unknowns"]
+print("materials tab OK: 463 seeds, unknown items 6 + 1")

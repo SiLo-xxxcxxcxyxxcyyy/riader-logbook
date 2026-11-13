@@ -444,7 +444,10 @@ V.scan=()=>{
     <div class="tbl scanlist"><table><thead><tr><th>Item</th><th class="num">Count</th><th class="num">Match</th></tr></thead><tbody>
     ${r.items.map((x,i)=>`<tr><td>${itemBtn(x.id)}</td><td class="num"><input type="number" min="0" value="${x.count}" data-scancount="${i}" aria-label="Scanned count of ${esc(nm(x.id))}"></td><td class="num conf ${x.score<0.75?"low":""}">${Math.round(x.score*100)}%</td></tr>`).join("")}
     </tbody></table></div>
-    ${r.unknown?`<p class="note">${plural(r.unknown,"slot")} could not be matched to an item and ${r.unknown===1?"was":"were"} skipped.</p>`:""}
+    ${(r.unknowns||[]).length?`<div class="stack" style="gap:8px"><div class="eyebrow">Not recognised (${r.unknowns.length})</div>
+      <p class="mut" style="margin:0;font-size:13px">These items aren't in the icon set yet (often new ones). Tell the app what each one is: it adds them to this scan and recognises them from now on.</p>
+      <div class="steps-g">${r.unknowns.map(u=>`<figure style="flex-direction:row;align-items:center;gap:8px"><img src="${u.img}" alt="" style="width:56px;height:56px;flex:none"><div class="stack" style="gap:4px;flex:1;min-width:0"><span class="mono mut" style="font-size:12px">×${u.count}</span><div class="row" style="gap:4px"><input list="allItemsScan" id="lk_${u.key}" placeholder="Item name" style="flex:1;min-width:0"><button class="btn sm pri" data-learn="${u.key}">Save</button></div></div></figure>`).join("")}</div>
+      <datalist id="allItemsScan">${Object.entries(D.items).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([,i])=>`<option value="${esc(i.n)}">`).join("")}</datalist></div>`:""}
     <p class="note">Fix any wrong count before applying. Low matches are shown in red.</p>
     <div class="row"><button class="btn pri" id="applyVaultReplace">Replace my vault with this</button><button class="btn" id="applyVaultAdd">Add to my vault</button><button class="btn" id="dropScan">Discard</button></div></div>`;
   }
@@ -803,6 +806,10 @@ document.addEventListener("click",e=>{
   else if(d.actdel){const ids=Object.keys(S.active||{}).filter(i=>i!==d.actdel);snapshotDone();delete S.active[d.actdel];
     // drop the quests that were only marked done because of the removed one
     const keep=new Set();ids.forEach(i=>ancestors(i).forEach(a=>keep.add(a)));ancestors(d.actdel).forEach(a=>{if(!keep.has(a))delete S.done[a]});render()}
+  else if(d.learn){const v=($("#lk_"+d.learn)?.value||"").trim().toLowerCase();const id=BY_NAME[v]||Object.keys(D.items).find(k=>D.items[k].n.toLowerCase().startsWith(v));
+    if(!v||!id){toast("Pick an item from the list");return}
+    if(!api()){toast("Learning works in the desktop app");return}
+    api().learn(d.learn,id).then(res=>{if(res){S.scan={...S.scan,...res};render();toast(`Saved as ${nm(id)}. It's recognised from now on.`)}})}
   else if(t.id==="applyQuests")applyQuests(true);
   else if(t.id==="applyQuestsAdd")applyQuests(false);
   else if(t.id==="openScans"&&api())api().open_scans_folder();

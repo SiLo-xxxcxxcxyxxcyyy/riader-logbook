@@ -66,7 +66,7 @@ class Api:
 
     def _scn(self) -> Scanner:
         if self._scanner is None:
-            self._scanner = Scanner()
+            self._scanner = Scanner(learned_dir=os.path.join(DATA_DIR, "learned"))
         return self._scanner
 
     # ---- called from the UI (window.pywebview.api.*) ----
@@ -99,6 +99,11 @@ class Api:
         return {"app": LAUNCH.get("app"), "code": LAUNCH.get("code"), "scans": SCAN_DIR,
                 "update": up.get("status"), "update_error": up.get("error"), "log": LAUNCH.get("log"),
                 "new_app": up.get("new_app") or (up.get("download") if up.get("status") == "new_exe_needed" else None)}
+
+    def learn(self, key, item_id):
+        """'This unknown slot is item_id': remembered for future scans."""
+        with self._lock:
+            return self._scn().learn(key, item_id)
 
     def reset_vault_session(self):
         self._scn().reset_vault_session()
