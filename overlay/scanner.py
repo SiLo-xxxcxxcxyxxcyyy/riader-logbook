@@ -25,6 +25,8 @@ ASSETS = os.path.join(getattr(sys, "_MEIPASS", HERE), "assets")
 REF = 64                      # reference icon size (px)
 ICON_ROWS = (4, 46)           # rows of a 64px slot used for matching (skips the bottom strip with the count)
 ICON_COLS = (4, 60)
+ROW_SAME = 0.93               # feature similarity above which two slot pictures count as the same slot
+BADGE = (0, 16, 46, 64)       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -79,6 +81,9 @@ class Scanner:
     @classmethod
     def _feature(cls, slot_bgr):
         s = cv2.resize(slot_bgr, (REF, REF), interpolation=cv2.INTER_AREA)
+        # the game puts badges in the top-right corner (eye = marked by you, diamond = needed for a
+        # quest); reference icons have none, so blank that corner on both sides
+        s[BADGE[0]:BADGE[1], BADGE[2]:BADGE[3]] = np.median(s[2:14, 2:18].reshape(-1, 3), axis=0)
         icon = cv2.resize(s[ICON_ROWS[0]:ICON_ROWS[1], ICON_COLS[0]:ICON_COLS[1]], (28, 21),
                           interpolation=cv2.INTER_AREA).astype(np.float32)
         g = cv2.cvtColor(icon.astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32)
@@ -135,17 +140,7 @@ class Scanner:
 
     def learn(self, key, item_id):
         """Remember an unknown slot as item_id (saved for future scans) and move it into the totals."""
-        u = self._unknowns.pop(key, None)
-        if u is None:
-            return None
-        crop = self._unknown_crops.pop(key)
-        self._add_ref(item_id, crop)
-        if self.learned_dir:
-            os.makedirs(self.learned_dir, exist_ok=True)
-            cv2.imencode(".png", crop)[1].tofile(os.path.join(self.learned_dir, f"{item_id}__{key[:16]}.png"))
-        t = self._totals.setdefault(item_id, {"id": item_id, "count": 0, "score": 1.0})
-        t["count"] += u["count"]
-        return self._vault_result()
+        return self.reassign(None, key, item_id)
 
     def classify(self, slot_bgr):
         f = self._feature(slot_bgr)
@@ -187,15 +182,15 @@ class Scanner:
             if crop.size == 0 or self._is_empty(crop):     # empty slot (just the frame)
                 continue
             ((iid, score), (alt, alt_score)), (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
+            c = img[y:y + h, x:x + w].copy()
+            slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1}
             if score < MATCH_MIN:
                 unknown += 1
-                c = img[y:y + h, x:x + w].copy()
-                found.append({"id": "?" + self._slot_key(c), "unknown": True, "crop": c, "score": score,
-                              "box": (x, y, w, h), "count": 1})
+                found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score})
                 continue
             if score - alt_score < 0.02:            # near-identical icons (e.g. tier variants): flag for review
                 score = min(score, 0.7)
-            found.append({"id": iid, "score": score, "box": (x, y, w, h), "count": 1})
+            found.append({**slot, "id": iid, "score": score})
         if sum(1 for f in found if not f.get("unknown")) < 1 and len(found) < 3:
             return None
         self._read_counts(img, found)
@@ -233,72 +228,144 @@ class Scanner:
         self._unknowns, self._unknown_crops = {}, {}
         self._quests = {}
         self._slots = 0            # occupied slots counted so far (rows seen twice are counted once)
-        self._stash = None         # {"used": 287, "cap": 292} read from the "STASH 287/292" header
+        self._variant_crops = {}   # (item_id, slot key) -> picture, so a wrong match can be corrected
+        self._cats = {}            # stash category index (0 = all) -> {"used", "cap", "slots"}
+        self._cat = None           # category of the last page
 
     @staticmethod
     def read_stash_header(lines, k=1.0):
-        """The stash header shows used/capacity slots ("STASH" with "287/292" under it). Returns
-        {"used", "cap"} or None. Other x/y counters on screen (backpack 0/10, quick use 0/4) are
-        ignored by taking the one closest below the STASH label."""
+        """The stash header under "STASH": "287/292" (used/capacity) on the all-items view, or just
+        "223" when a category filter is on. Returns ({"used", "cap"}, label position) or (None, label).
+        Other counters on screen (backpack 0/10, quick use 0/4) are ignored by taking the one closest
+        below the STASH label."""
         label = next((c for t, c, _ in lines if _norm(t) == "stash"), None)
         if label is None:
-            return None
+            return None, None
         best = None
         for t, (cx, cy), _ in lines:
-            m = re.fullmatch(r"\D{0,3}(\d{1,4})\s*[/l|]\s*(\d{2,4})", t.strip())
+            m = re.fullmatch(r"\D{0,3}?(\d{1,4})(?:\s*[/l|]\s*(\d{2,4}))?", t.strip())
             if not m:
                 continue
-            used, cap = int(m.group(1)), int(m.group(2))
+            used, cap = int(m.group(1)), int(m.group(2)) if m.group(2) else None
             dy, dx = cy - label[1], abs(cx - label[0])
-            if not (0 < dy < 90 * k and dx < 200 * k and used <= cap):
+            if not (0 < dy < 60 * k and dx < 120 * k and (cap is None or used <= cap)):
                 continue
             if best is None or dy + dx < best[0]:
                 best = (dy + dx, {"used": used, "cap": cap})
-        return best and best[1]
+        return (best and best[1]), label
+
+    @staticmethod
+    def stash_category(img, label, k=1.0):
+        """Which category button left of the stash is selected (0 = all items). The selected one is a
+        white disc; buttons sit in a column 89px left of the STASH label, 140px below it, 50px apart
+        (at 1080p). Returns None if no button stands out."""
+        if label is None:
+            return None
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        x, r = int(label[0] - 89 * k), max(4, int(20 * k))
+        vals = []
+        for i in range(10):
+            y = int(label[1] + (140 + 50 * i) * k)
+            patch = gray[max(0, y - r):y + r, max(0, x - r):x + r]
+            vals.append(float((patch > 200).mean()) if patch.size else 0.0)   # share of white pixels
+        order = np.argsort(vals)[::-1]
+        if vals[order[0]] > 0.3 and vals[order[1]] < 0.1:
+            return int(order[0])
+        return None
 
     @staticmethod
     def _rows(slots):
+        """Group slots into rows by their y position (a slot a few px off still joins its row)."""
         size = float(np.median([s["box"][3] for s in slots]))
-        rows = {}
-        for s in slots:
-            rows.setdefault(round(s["box"][1] / size), []).append(s)
-        return [sorted(r, key=lambda s: s["box"][0]) for _, r in sorted(rows.items())]
+        rows = []
+        for s in sorted(slots, key=lambda s: s["box"][1]):
+            if rows and s["box"][1] - rows[-1][0]["box"][1] < size * 0.45:
+                rows[-1].append(s)
+            else:
+                rows.append([s])
+        return [sorted(r, key=lambda s: s["box"][0]) for r in rows]
+
+    @staticmethod
+    def _same_row(a, b):
+        """Two rows show the same slots: same length and every slot looks the same. Compares the
+        pictures, not the recognised names, so one misread slot doesn't break the overlap."""
+        return len(a) == len(b) and all(float(x @ y) > ROW_SAME for x, y in zip(a, b))
 
     def _add_vault_page(self, page):
         """Add a page, skipping rows already counted when the stash was only scrolled a bit."""
-        sig = tuple(s["id"] for s in page["slots"])
-        if sig in self._pages:
-            return False
         rows = self._rows(page["slots"])
-        ids = [tuple(s["id"] for s in r) for r in rows]
+        feats = [[s["feat"] for s in r] for r in rows]
         last = self._last_rows
         skip = 0
-        for k in range(min(len(ids), len(last)), 0, -1):         # largest overlap: our first k rows == their last k
-            if ids[:k] == last[-k:]:
+        for k in range(min(len(feats), len(last)), 0, -1):       # largest overlap: our first k rows == their last k
+            if all(self._same_row(a, b) for a, b in zip(feats[:k], last[-k:])):
                 skip = k
                 break
-        self._pages.append(sig)
-        self._last_rows = ids
+        if skip == len(rows) and len(rows) == len(last):          # the same page again
+            return False
+        self._pages.append(len(rows))
+        self._last_rows = feats
         new = [s for r in rows[skip:] for s in r]
         self._slots += len(new)
+        cat = self._cats.get(self._cat)
+        if cat is not None:
+            cat["slots"] += len(new)
         for s in new:
             if s.get("unknown"):
-                key = s["id"][1:]
+                key = s["key"]
                 u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"])})
                 u["count"] += s["count"]
                 self._unknown_crops.setdefault(key, s["crop"])
                 continue
-            t = self._totals.setdefault(s["id"], {"id": s["id"], "count": 0, "score": 1.0})
+            t = self._totals.setdefault(s["id"], {"id": s["id"], "count": 0, "score": 1.0, "variants": {}})
             t["count"] += s["count"]
             t["score"] = min(t["score"], round(s["score"], 3))
+            v = t["variants"].setdefault(s["key"], {"key": s["key"], "count": 0, "score": 1.0, "img": _thumb(s["crop"], 48)})
+            v["count"] += s["count"]
+            v["score"] = min(v["score"], round(s["score"], 3))
+            self._variant_crops.setdefault((s["id"], s["key"]), s["crop"])
         self._unknown += page["unknown"]
         return True
 
+    def reassign(self, from_id, key, to_id):
+        """'These slots are really to_id': move one look-alike group (an unknown, or a variant of a
+        recognised item, e.g. a weapon whose silencer changes its icon) and remember its picture."""
+        if from_id:
+            t = self._totals.get(from_id)
+            v = t and t["variants"].pop(key, None)
+            if not v:
+                return None
+            t["count"] -= v["count"]
+            if t["count"] <= 0:
+                del self._totals[from_id]
+            crop, count = self._variant_crops.pop((from_id, key)), v["count"]
+        else:
+            u = self._unknowns.pop(key, None)
+            if u is None:
+                return None
+            crop, count = self._unknown_crops.pop(key), u["count"]
+        self._add_ref(to_id, crop)
+        if self.learned_dir:
+            os.makedirs(self.learned_dir, exist_ok=True)
+            cv2.imencode(".png", crop)[1].tofile(os.path.join(self.learned_dir, f"{to_id}__{key[:16]}.png"))
+        t = self._totals.setdefault(to_id, {"id": to_id, "count": 0, "score": 1.0, "variants": {}})
+        t["count"] += count
+        v = t["variants"].setdefault(key, {"key": key, "count": 0, "score": 1.0, "img": _thumb(crop, 48)})
+        v["count"] += count
+        self._variant_crops[(to_id, key)] = crop
+        return self._vault_result()
+
     def _vault_result(self):
-        items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
+        items = sorted(({**t, "variants": sorted(t["variants"].values(), key=lambda v: v["score"])}
+                        for t in self._totals.values()),
+                       key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
         unk = list(self._unknowns.values())
+        cats = [{"cat": c, **v} for c, v in sorted(self._cats.items())]
         return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": len(unk), "unknowns": unk,
-                "slots": self._slots, "stash": self._stash}
+                "slots": self._slots, "stash": self._cats.get(self._cat) and {"cat": self._cat, **self._cats[self._cat]},
+                "categories": cats,
+                # the all-items view plus a category in one session counts that category twice
+                "mixed": 0 in self._cats and len(self._cats) > 1}
 
     # ---------- quests ----------
     def scan_quests(self, lines):
@@ -331,7 +398,18 @@ class Scanner:
             return {"kind": "quests", "quests": sorted(self._quests.values(), key=lambda q: -q["score"]), "added": new}
         page = self.scan_vault(img)
         if page:
-            self._stash = self.read_stash_header(lines, small.shape[0] / 1080) or self._stash
+            k = small.shape[0] / 1080
+            head, label = self.read_stash_header(lines, k)
+            cat = self.stash_category(small, label, k)
+            if cat is None and head:
+                cat = 0 if head["cap"] else -1                   # -1: some category, button not found
+            if cat is not None:
+                if cat != self._cat:
+                    self._last_rows = []                          # other category: no overlap with the last page
+                self._cat = cat
+                c = self._cats.setdefault(cat, {"used": None, "cap": None, "slots": 0})
+                if head:
+                    c["used"], c["cap"] = head["used"], head["cap"]
             added = self._add_vault_page(page)
             return {**self._vault_result(), "duplicate": not added}
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",

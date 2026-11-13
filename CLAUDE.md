@@ -34,8 +34,15 @@ Czech; reply in Czech. UI text stays English.
 - Verified live on 2026-11-13: `method: dxgi`, correct stash frame, scanner finds the vault.
 - Still unexplained: the app crashed once while pressing F9 repeatedly in the stash (see `crash.log`).
 - Debug a scan: `python overlay/scanner.py <scan.png> --debug out.png`; then run `tests/test_real.py`.
-- Stash completeness: the scanner OCRs the "STASH 287/292" header (`Scanner.read_stash_header`) and
-  counts occupied slots per session (`_slots`, rows seen twice count once); the Scan tab shows a meter.
+- Stash completeness: the scanner OCRs the header under "STASH" (`read_stash_header`): "287/292" on the
+  all-items view, just "223" when a category filter is on. `stash_category` finds the selected category
+  button (white disc left of the grid; 0 = all). Slots are counted per category; scanning all-items and
+  a category in one session counts twice (`mixed`, the UI warns). Page overlap compares slot pictures
+  (`ROW_SAME`), not recognised names; rows are grouped by y with a tolerance.
+- Badges in a slot's top-right corner (eye = marked, diamond = quest item) are blanked before matching.
+- Every recognised item keeps its look-alike groups ("variants"); "Wrong?" in the Scan tab calls
+  `reassign(from_id, key, to_id)`, which fixes the scan and saves the picture to `learned\` (weapons
+  with attachments look like other weapons). Augment pages: not checked yet, no screenshot of one.
 - While a scan runs, `Api._state` calls `window.onScanState(stage)` → orange "Scanning…" bar on top.
 - ~377 items (mostly newer ones) have no icon in RaidTheory's set (refs.npz), so they come back as
   "Not recognised". MetaForge preview icons were tried as extra references and match the in-game slots

@@ -117,6 +117,11 @@ class Api:
         with self._lock:
             return self._scn().learn(key, item_id)
 
+    def reassign(self, from_id, key, to_id):
+        """'These slots were recognised as from_id but are to_id': fixes this scan, remembered for later."""
+        with self._lock:
+            return self._scn().reassign(from_id, key, to_id)
+
     def reset_vault_session(self):
         self._scn().reset_vault_session()
         return True
