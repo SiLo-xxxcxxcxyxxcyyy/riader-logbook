@@ -51,3 +51,7 @@ Czech; reply in Czech. UI text stays English.
 ## Conventions
 Commit with "Raider Logbook <noreply@anthropic.com>" as author; push to `main` of
 github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes and bump the manifest.
+- Weapons/mods: the icon gives the weapon (`family()`), the I-IV numeral bottom-right gives the tier
+  (`read_tier`, templates in `assets/numerals.npz` cut from a real 1080p stash). Whole weapons lack
+  references (Torrente, Canto, Stitcher, Bantam): teach one tier and all tiers follow.
+- Corrections (Save / Wrong?) are logged as `correction: from (key) -> to` in app.log.
