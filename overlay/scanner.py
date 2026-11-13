@@ -35,6 +35,7 @@ DINO_MIN = {"base": 0.78, "web": 0.44, "taught": 0.9}   # DINOv2 similarity need
 DINO_MARGIN = 0.02            # ...and the lead over the best other item
 LEARNED_MIN = 0.9            # taught pictures only count above this similarity
 DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
+NEAR_OK = 0.85                # pixel match this good on the grid box: skip the wider shift search
 CACHE_SAME = 0.995            # whole-slot picture similarity at which an earlier reading is reused
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
@@ -265,9 +266,16 @@ class Scanner:
         H, W = img.shape[:2]
         best_sims, best_crop = None, None
         step = max(1, round(w / 40))
-        for d in (0, -2 * step, -4 * step):                      # shrink
-            for dx in (-step * 2, -step, 0, step, step * 2):
-                for dy in (-step * 2, -step, 0, step, step * 2):
+        # the box from the grid is usually right: try it and its nearest shifts first, and search the
+        # wider set of shifts and sizes only when that doesn't give a clear match
+        near = [(0, dx, dy) for dx in (-step, 0, step) for dy in (-step, 0, step)]
+        wide = [(d, dx, dy) for d in (0, -2 * step, -4 * step) for dx in (-step * 2, -step, 0, step, step * 2)
+                for dy in (-step * 2, -step, 0, step, step * 2) if (d, dx, dy) not in near]
+        for stage in (near, wide):
+            if stage is wide and best_sims is not None and best_sims.max() >= NEAR_OK:
+                break
+            for d, dx, dy in stage:
+                if True:
                     x0, y0 = x + dx - d // 2, y + dy - d // 2
                     x1, y1 = x0 + w + d, y0 + h + d
                     if x0 < 0 or y0 < 0 or x1 > W or y1 > H:
@@ -296,7 +304,7 @@ class Scanner:
         order = [order[0]] + [j for j in order[1:] if self.ref_ids[j] != self.ref_ids[order[0]]]
         return [(self.ref_ids[j], float(best_sims[j])) for j in order[:k]], best_crop
 
-    def scan_vault(self, img, ocr_lines=None, view=None):
+    def scan_vault(self, img, ocr_lines=None, view=None, progress=None):
         """view: (top, bottom) of the stash's visible area in pixels. Rows cut off by its edges (smooth
         scrolling leaves one half shown) are skipped: they'd be read as a different row than the same
         row seen whole, and break the joining of pages."""
@@ -306,7 +314,7 @@ class Scanner:
             slots = [s for s in slots if s[1] >= top - 2 and s[1] + s[3] <= bottom + 2]
         if len(slots) < 4:
             return None
-        found, unknown, pending, cached, vecs = [], 0, [], [], []
+        found, unknown, pending, cached, vecs, todo = [], 0, [], [], [], []
         for (x, y, w, h) in slots:
             crop = img[y:y + h, x:x + w]
             if crop.size == 0 or self._is_empty(crop):     # empty slot (just the frame)
@@ -316,6 +324,12 @@ class Scanner:
             if hit is not None:                            # the same slot seen in an earlier frame
                 cached.append({**hit, "crop": crop.copy(), "box": (x, y, w, h)})
                 continue
+            todo.append(((x, y, w, h), cv))
+        if progress and todo:
+            # what's known already, and what is still being read (for the in-game marks)
+            progress([[*map(int, s["box"]), None if s.get("unknown") else s["id"], int(s["count"]), "ok"] for s in cached] +
+                     [[*map(int, b), None, 1, "busy"] for b, _ in todo])
+        for (x, y, w, h), cv in todo:
             old, (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
             pending.append((old, (x, y, w, h), img[y:y + h, x:x + w].copy()))
             vecs.append(cv)
@@ -389,14 +403,15 @@ class Scanner:
         """Read the stack count of each slot with recognition-only OCR on the slot corners."""
         for s in found:
             st = 9999 if s.get("unknown") else (self.items.get(s["id"], {}).get("st") or 1)
-            if st <= 1:                     # doesn't stack (weapons, keys, augments): always one
-                continue
+            if not s.get("unknown") and self.family(s["id"])[1] is not None and st <= 1:
+                continue                    # a weapon or mod tier: the corner holds its numeral, never a count
             x, y, w, h = s["box"]
             best = None
             for (ya, yb, xa, xb) in ((0.70, 1.0, 0.45, 1.0), (0.0, 0.30, 0.45, 1.0)):   # bottom-right, top-right
                 crop = img[y + int(h * ya):y + int(h * yb), x + int(w * xa):x + int(w * xb)]
                 if crop.size == 0:
                     continue
+                text_px = float((cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) > 190).mean())   # white count digits
                 f = 96.0 / crop.shape[0]
                 crop = cv2.resize(crop, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC)
                 self.ocr  # make sure the engines are loaded
@@ -404,7 +419,7 @@ class Scanner:
                 rec = getattr(self._ocr_digits, "rec", None)
                 res = [(None, t, c) for t, c in rec(crop)] if rec else []
                 if not any(re.fullmatch(r"[x×X]?\s*\d{1,4}\s*[x×X]?", r[1].strip().replace("O", "0").replace("o", "0")
-                                        .replace("l", "1").replace("I", "1")) for r in res):
+                                        .replace("l", "1").replace("I", "1")) for r in res) and text_px > 0.004:
                     res = self._ocr_digits(crop)
                 for r in res or []:
                     text, conf = r[-2], float(r[-1])
@@ -415,6 +430,8 @@ class Scanner:
                     if m and 1 <= int(m.group(2)) <= limit and conf > 0.3:
                         if best is None or conf > best[1]:
                             best = (int(m.group(2)), conf)
+                if best and best[1] > 0.8:
+                    break                   # read clearly in the bottom corner: no need for the top one
             if best:
                 s["count"] = best[0]
 
@@ -685,7 +702,7 @@ class Scanner:
                 "level": int(lv) if lv and 1 <= int(lv) <= 200 else None}
 
     # ---------- entry point ----------
-    def scan(self, img, auto=False):
+    def scan(self, img, auto=False, progress=None):
         """Auto-detect what is on screen. Returns a JSON-able dict for the UI. auto: called by the
         background watcher, so screens that are neither the stash nor the quest log return None."""
         self._auto = auto
@@ -728,7 +745,7 @@ class Scanner:
         # F9 pages a whole screen at a time and would lose it
         kk = small.shape[0] / 1080
         stash_view = (int(262 * kk * h / small.shape[0]), int(944 * kk * h / small.shape[0])) if auto and (fast or any(_norm(t) == "stash" for t, _, _ in (lines or []))) else None
-        page = self.scan_vault(img, view=stash_view)
+        page = self.scan_vault(img, view=stash_view, progress=progress)
         if page:
             k = small.shape[0] / 1080
             head, label = (fast[0], fast[1]) if fast else self.read_stash_header(lines, k)

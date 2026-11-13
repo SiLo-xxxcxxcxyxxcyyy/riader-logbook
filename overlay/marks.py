@@ -124,6 +124,9 @@ class Marks:
             x, y, bw, bh = s["box"]
             r = max(7, bw // 7)
             cx, cy = x + bw - r - 3, y + r + 3                     # badge in the top-right corner
+            if s.get("busy"):                                    # still being read: a grey dot
+                d.ellipse((cx - r * 0.6, cy - r * 0.6, cx + r * 0.6, cy + r * 0.6), fill=(150, 150, 150, 200))
+                continue
             col = GREEN if s.get("ok") else RED
             d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=col + (235,), outline=(0, 0, 0, 160), width=1)
             if s.get("ok"):

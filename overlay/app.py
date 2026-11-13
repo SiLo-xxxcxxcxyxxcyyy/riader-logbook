@@ -302,15 +302,15 @@ class Watcher(threading.Thread):
             m.show((int(ox), int(oy), f.shape[1], f.shape[0]), [], (text, colour, (int(150 * k), int(122 * k))))
             self.marked = True
 
-    def _show_marks(self, f, frame, res=None):
+    def _show_marks(self, f, frame, res=None, busy=None):
         m = self.api._marks
         if not m or not frame:
             return
         vals = self.api._values
         slots = []
-        for x, y, w, h, iid, n in frame:
+        for x, y, w, h, iid, n, *state in frame:
             v = vals.get(iid, 0) * n if iid else 0
-            slots.append({"box": (x, y, w, h), "ok": iid is not None,
+            slots.append({"box": (x, y, w, h), "ok": iid is not None, "busy": bool(state and state[0] == "busy"),
                           "label": marks.short_value(v) if v else None})
         self._last_slots = slots
         status = None
@@ -326,6 +326,9 @@ class Watcher(threading.Thread):
                 status = (f"{st['slots']} / {st['used']} read · scroll on", "busy")
             if status:
                 status = (*status, (int(150 * k), int(122 * k)))
+        if busy:
+            k = f.shape[0] / 1080
+            status = (busy, "busy", (int(150 * k), int(122 * k)))
         ox, oy = self.stream.origin
         m.show((int(ox), int(oy), f.shape[1], f.shape[0]), slots, status)
         self.marked = True
@@ -406,7 +409,7 @@ class Watcher(threading.Thread):
         with self.api._lock:
             scn = self.api._scn()
             t0 = time.time()
-            res = scn.scan(f, auto=True)
+            res = scn.scan(f, auto=True, progress=lambda fr: self._show_marks(f, fr, None, "Reading…"))
             if res and res.get("kind") == "vault" and self.last_stash and now - self.last_stash > self.NEW_VISIT:
                 # back at the stash after a while: read it from scratch (the cache keeps it fast)
                 scn.reset_vault_session()
