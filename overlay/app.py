@@ -114,11 +114,13 @@ class Api:
 
     def learn(self, key, item_id):
         """'This unknown slot is item_id': remembered for future scans."""
+        logging.info("correction: unknown %s -> %s", key[:16], item_id)   # so wrong matches can be reviewed
         with self._lock:
             return self._scn().learn(key, item_id)
 
     def reassign(self, from_id, key, to_id):
         """'These slots were recognised as from_id but are to_id': fixes this scan, remembered for later."""
+        logging.info("correction: %s (%s) -> %s", from_id, key[:16], to_id)
         with self._lock:
             return self._scn().reassign(from_id, key, to_id)
 

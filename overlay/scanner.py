@@ -29,7 +29,9 @@ ROW_SAME = 0.93               # feature similarity above which two slot pictures
 BADGE = (0, 16, 46, 64)
 DETAIL = (12, 44, 12, 42)     # rows/cols of a 64px slot compared at full detail when two items nearly tie
 CLOSE = 0.03                  # "nearly tie": within this much of the best match
-DETAIL_MARGIN = 0.05          # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
+TIER_RE = re.compile(r"(.+)_(i|ii|iii|iv)")
+NUMERAL = (70, 96, 66, 96)     # rows/cols of a 96px slot searched for the tier numeral
+DETAIL_MARGIN = 0.05         # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -56,8 +58,38 @@ class Scanner:
                     im = cv2.imdecode(np.fromfile(os.path.join(learned_dir, fn), np.uint8), cv2.IMREAD_COLOR)
                     if im is not None:
                         self._add_ref(fn.split("__")[0], im)
+        # tier numerals (I-IV) drawn bottom-right on weapons and mods; all tiers share one icon
+        num = np.load(os.path.join(assets, "numerals.npz")) if os.path.exists(os.path.join(assets, "numerals.npz")) else None
+        self._numerals = [(str(l), im.astype(np.float32)) for l, im in zip(num["labels"], num["imgs"])] if num is not None else []
         self._ocr = None
         self.reset_vault_session()
+
+    @staticmethod
+    def family(item_id):
+        """'anvil_iv' -> ('anvil', 'iv'); items without a tier -> (item_id, None)."""
+        m = TIER_RE.fullmatch(item_id)
+        return (m.group(1), m.group(2)) if m else (item_id, None)
+
+    def read_tier(self, slot_bgr):
+        """Read the tier numeral in the slot's bottom-right corner: 'i'..'iv', or None if unsure."""
+        if not self._numerals:
+            return None
+        s = cv2.cvtColor(cv2.resize(slot_bgr, (96, 96), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        area = s[NUMERAL[0]:NUMERAL[1], NUMERAL[2]:NUMERAL[3]].astype(np.float32)
+        scores = sorted(((float(cv2.matchTemplate(area, t, cv2.TM_CCOEFF_NORMED).max()), l) for l, t in self._numerals),
+                        reverse=True)
+        if scores[0][0] > 0.7 and scores[0][0] - scores[1][0] > 0.04:
+            return scores[0][1]
+        return None
+
+    def _with_tier(self, slot_bgr, iid):
+        """Weapons and mods: the icon names the weapon, the numeral the tier. Lets one taught tier
+        (or one reference icon) recognise every tier of that weapon."""
+        fam, tier = self.family(iid)
+        if tier is None or (self.items.get(iid, {}).get("st") or 1) > 1:
+            return iid
+        t = self.read_tier(slot_bgr)
+        return f"{fam}_{t}" if t and f"{fam}_{t}" in self.items else iid
 
     # ---------- helpers ----------
     @property
@@ -213,9 +245,12 @@ class Scanner:
                 unknown += 1
                 found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score})
                 continue
-            if score - alt_score < 0.02:            # near-identical icons (e.g. tier variants): flag for review
+            tiered = self._with_tier(c, iid)
+            # near-identical icons: flag for review, unless they are tiers of one weapon and the numeral was read
+            tier_read = self.family(iid)[1] is not None and self.read_tier(c) is not None
+            if score - alt_score < 0.02 and not (tier_read and self.family(alt)[0] == self.family(iid)[0]):
                 score = min(score, 0.7)
-            found.append({**slot, "id": iid, "score": score})
+            found.append({**slot, "id": tiered, "score": score})
         if sum(1 for f in found if not f.get("unknown")) < 1 and len(found) < 3:
             return None
         self._read_counts(img, found)
