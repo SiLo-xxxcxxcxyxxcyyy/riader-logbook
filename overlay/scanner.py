@@ -26,7 +26,10 @@ REF = 64                      # reference icon size (px)
 ICON_ROWS = (4, 46)           # rows of a 64px slot used for matching (skips the bottom strip with the count)
 ICON_COLS = (4, 60)
 ROW_SAME = 0.93               # feature similarity above which two slot pictures count as the same slot
-BADGE = (0, 16, 46, 64)       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
+BADGE = (0, 16, 46, 64)
+DETAIL = (12, 44, 12, 42)     # rows/cols of a 64px slot compared at full detail when two items nearly tie
+CLOSE = 0.03                  # "nearly tie": within this much of the best match
+DETAIL_MARGIN = 0.05          # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -44,6 +47,7 @@ class Scanner:
         refs = np.load(os.path.join(assets, "refs.npz"))
         self.ref_ids = [str(x) for x in refs["ids"]]
         self.ref_feat = np.stack([self._feature(im) for im in refs["imgs"]])
+        self.ref_detail = np.stack([self._detail(im) for im in refs["imgs"]])
         # icons you taught the app (items missing from the icon set, e.g. new ones): <item_id>__<key>.png
         self.learned_dir = learned_dir
         if learned_dir and os.path.isdir(learned_dir):
@@ -124,6 +128,14 @@ class Scanner:
     def _add_ref(self, item_id, slot_bgr):
         self.ref_ids.append(item_id)
         self.ref_feat = np.vstack([self.ref_feat, self._feature(slot_bgr)[None, :]])
+        self.ref_detail = np.vstack([self.ref_detail, self._detail(slot_bgr)[None, :]])
+
+    @classmethod
+    def _detail(cls, slot_bgr):
+        """Full-resolution colour picture of the middle of the icon. Tells apart items whose icons
+        differ only in a small symbol (Combat Mk. 3 Aggressive vs Flanking: same case, other emblem)."""
+        s = cv2.resize(slot_bgr, (REF, REF), interpolation=cv2.INTER_AREA)
+        return cls._parts(s[DETAIL[0]:DETAIL[1], DETAIL[2]:DETAIL[3]].astype(np.float32).ravel())
 
     @staticmethod
     def _slot_key(slot_bgr):
@@ -169,8 +181,21 @@ class Scanner:
                     sims = self.ref_feat @ self._feature(img[y0:y1, x0:x1])
                     if best_sims is None or sims.max() > best_sims.max():
                         best_sims, best_crop = sims, (x0, y0, x1 - x0, y1 - y0)
-        order = np.argsort(-best_sims)[:k]
-        return [(self.ref_ids[j], float(best_sims[j])) for j in order], best_crop
+        order = list(np.argsort(-best_sims))
+        # near-ties between different items: let the middle of the icon decide
+        top = best_sims[order[0]]
+        close = [j for j in order[:20] if best_sims[j] >= top - CLOSE]
+        if len({self.ref_ids[j] for j in close}) > 1:
+            bx, by, bw, bh = best_crop
+            det = self.ref_detail[close] @ self._detail(img[by:by + bh, bx:bx + bw])
+            # only when the middle clearly differs: tier variants (Ferro III / IV) share the same
+            # picture and differ in the numeral below, which the main match already weighs
+            if det.max() - det[0] > DETAIL_MARGIN:
+                winner = close[int(np.argmax(det))]
+                order.remove(winner)
+                order.insert(0, winner)
+        order = [order[0]] + [j for j in order[1:] if self.ref_ids[j] != self.ref_ids[order[0]]]
+        return [(self.ref_ids[j], float(best_sims[j])) for j in order[:k]], best_crop
 
     def scan_vault(self, img, ocr_lines=None):
         slots = self.find_slots(img)
