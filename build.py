@@ -512,7 +512,24 @@ def assemble(base, F, log=print):
                 {"n": "Arc Raiders Hub", "u": "https://arcraidershub.com/guides", "what": "skill build order (copied by hand) and guide links"},
                 {"n": "RaidTheory arcraiders-data", "u": "https://github.com/RaidTheory/arcraiders-data", "what": "recipes, recycling, ARC drops, trades, projects (MIT)"},
             ]}
-    data = {"items": items, "quests": quests, "hideout": hideout, "projects": base["projects"], "bots": base["bots"],
+    # hand-kept projects (sources/projects.json): ones RaidTheory doesn't list yet, and which run now
+    projects = {k: dict(v) for k, v in base["projects"].items()}
+    try:
+        extra = json.load(open(os.path.join(RES, "sources", "projects.json"), encoding="utf-8"))
+        for pid, p in extra.get("add", {}).items():
+            if pid not in projects:
+                phases = []
+                for ph in p["ph"]:
+                    ph = dict(ph)
+                    ph["req"] = {i: q for i, q in ph.get("req", {}).items() if i in items}
+                    phases.append(ph)
+                projects[pid] = {**p, "ph": phases}
+        for pid in extra.get("current", []):
+            if pid in projects:
+                projects[pid]["cur"] = 1
+    except OSError:
+        pass
+    data = {"items": items, "quests": quests, "hideout": hideout, "projects": projects, "bots": base["bots"],
             "trades": base["trades"], "maps": maps, "skills": skills, "builds": builds, "meta": meta,
             "markers": markers, "events": events, "guides": guides, "align": base.get("align", {})}
     return data

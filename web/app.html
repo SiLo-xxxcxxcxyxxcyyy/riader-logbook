@@ -167,11 +167,14 @@ const MATS=new Set(["Basic Material","Refined Material","Topside Material","Natu
 
 /* ---------- state ---------- */
 const KEY="raider-logbook-v1";
-const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:true,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"mine",vf:"all",scan:null,stockBasic:400,stockMat:50},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
+const S=Object.assign({inv:{},done:{},hide:{},proj:{},future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"mine",vf:"all",scan:null,stockBasic:400,stockMat:50},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
 // v2 verdicts: projects (expeditions) count by default; past seasons' expeditions start as complete
-if(!S.v2){S.v2=1;S.useProj=true;S.stockBasic=S.stockBasic||400;S.stockMat=S.stockMat||50;
+if(!S.v2){S.v2=1;S.stockBasic=S.stockBasic||400;S.stockMat=S.stockMat||50;
   for(const p of ["expedition_project_s1","expedition_project","expedition_project_s3","expedition_project_s4"])
     if(D.projects[p]&&S.proj[p]==null)S.proj[p]=D.projects[p].ph.length}
+// v3: projects are opt-in. Only the ones you tick are tracked; per project you set the phase you're on and what you've handed in.
+if(!S.v3){S.v3=1;S.projT={};S.projGiven={};S.projOpen={}}
+S.projT=S.projT||{};S.projGiven=S.projGiven||{};S.projOpen=S.projOpen||{};
 // scan thumbnails stay out of storage: hundreds of them could push the whole state past the quota
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S,(k,v)=>k==="img"&&typeof v==="string"&&v.startsWith("data:")?undefined:v))}catch(e){}}
 const $=s=>document.querySelector(s);
@@ -204,8 +207,9 @@ function computeNeeds(){
     for(const[it,n]of Object.entries(q.req||{}))add(it,n,`Quest: ${q.n}`,st==="avail"?"qa":"qf")}
   for(const[id,h]of Object.entries(D.hideout)){const cur=S.hide[id]||0;
     for(const[lv,r]of Object.entries(h.lv)){if(+lv<=cur)continue;for(const[it,n]of Object.entries(r))add(it,n,`${h.n} lvl ${lv}`,+lv===cur+1?"ha":"hf")}}
-  if(S.useProj)for(const[id,p]of Object.entries(D.projects)){const cur=S.proj[id]||0;
-    p.ph.forEach((ph,i)=>{if(i<cur)return;for(const[it,n]of Object.entries(ph.req))add(it,n,`Project: ${p.n} – phase ${i+1}`,"p")})}
+  for(const id of Object.keys(S.projT)){const p=D.projects[id];if(!p)continue;const cur=S.proj[id]||0,g=S.projGiven[id]||{};
+    p.ph.forEach((ph,i)=>{if(i<cur)return;for(const[it,n]of Object.entries(ph.req)){const q=i===cur?Math.max(0,n-(g[it]||0)):n;
+      if(q)add(it,q,`Project: ${p.n} – phase ${i+1}`,i===cur?"pa":"p")}})}
   NEEDS=N;
 }
 const needTotal=id=>(NEEDS[id]||[]).reduce((a,b)=>a+b.q,0);
@@ -281,7 +285,7 @@ function openItem(id){
   const sec=(t,b)=>b?`<section class="stack" style="gap:6px"><div class="eyebrow">${t}</div><div>${b}</div></section>`:"";
   let h=`<div class="row"><span class="pill v-${v.k}">${v.label}</span><span class="mut">${esc(v.why)}</span></div>
   <div class="row"><label for="dlgQty" class="mut">In my vault</label><input type="number" min="0" id="dlgQty" value="${have(id)}"><span class="mono mut">· value ${fmt(it.v||0)} · stack ${it.st??"–"} · ${it.w??"–"} kg</span></div>`;
-  h+=sec(`Needed in total: ${needTotal(id)}`,needs.length?`<ul class="plain">${needs.map(n=>`<li><span class="mono">${n.q}×</span> ${esc(n.src)} ${n.kind==="qa"||n.kind==="ha"?'<span class="chip map">now</span>':''}</li>`).join("")}</ul>`:"");
+  h+=sec(`Needed in total: ${needTotal(id)}`,needs.length?`<ul class="plain">${needs.map(n=>`<li><span class="mono">${n.q}×</span> ${esc(n.src)} ${n.kind==="qa"||n.kind==="ha"||n.kind==="pa"?'<span class="chip map">now</span>':''}</li>`).join("")}</ul>`:"");
   if(isGear(it))h+=`<label class="row"><input type="checkbox" data-use="${esc(id)}" ${S.use&&S.use[id]?"checked":""}> I use this in my loadout (always keep it)</label>`;
   const gl=(D.guides||[]).filter(g=>g.items.includes(id));
   const where=[];
@@ -435,7 +439,7 @@ V.vault=()=>{
    <div class="stack" style="gap:6px"><span class="eyebrow">Stash category</span>
    <div class="filters">${[["all","All",rows.length],...STASH_CATS.map(c=>[c,c,ccnt[c]||0])].map(([k,l,n])=>`<button data-vcat="${esc(k)}" aria-pressed="${vc===k}">${l} ${n}</button>`).join("")}</div>
    <details class="panel"><summary style="cursor:pointer">How verdicts are decided</summary><div class="stack" style="margin-top:10px;gap:8px">
-    <p class="mut" style="margin:0;font-size:13px">An item is kept when a quest you haven't finished (later ones too), a workshop upgrade or a project / expedition still needs it. Otherwise it's a crafting material if a recipe, weapon upgrade or repair uses it. Anything else is recycled when it gives a material you're short of, or sold. Workshop levels and project progress are set on the Shopping list tab.</p>
+    <p class="mut" style="margin:0;font-size:13px">An item is kept when a quest you haven't finished (later ones too), a workshop upgrade or a project you track still needs it. Otherwise it's a crafting material if a recipe, weapon upgrade or repair uses it. Anything else is recycled when it gives a material you're short of, or sold. Workshop levels and the projects you track are set on the Shopping list tab.</p>
     <div class="row"><label for="stB">Keep up to</label><input id="stB" type="number" min="0" step="50" value="${S.stockBasic}" data-stock="stockBasic" style="width:90px"><span class="mut">of each common basic material (Chemicals, Metal Parts…), sell the rest</span></div>
     <div class="row"><label for="stM">Recycle into other crafting materials while you have fewer than</label><input id="stM" type="number" min="0" step="10" value="${S.stockMat}" data-stock="stockMat" style="width:90px"></div>
    </div></details>
@@ -453,8 +457,31 @@ function backupPanel(){return `<details class="panel"><summary style="cursor:poi
   <p class="note">Your data is stored only in this browser or app. Copy a backup and paste it somewhere else, for example on another PC.</p>
   <textarea id="bk" rows="4" style="width:100%;font-family:var(--f-mono);font-size:12px" aria-label="Backup data"></textarea>
   <div class="row"><button class="btn" id="bkExport">Create backup</button><button class="btn" id="bkCopy">Copy</button><button class="btn" id="bkImport">Restore from backup</button></div></div></details>`}
+// one project: tick to track it, pick the phase you're on, open it to enter what you've handed in
+function projRow(id){const p=D.projects[id],on=!!S.projT[id],cur=Math.min(S.proj[id]||0,p.ph.length),g=S.projGiven[id]||{},ph=p.ph[cur];
+  const left=ph?Object.entries(ph.req).reduce((a,[it,n])=>a+Math.max(0,n-(g[it]||0)),0):0;
+  const until=p.until?` · until ${new Date(p.until+"T00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"})}`:"";
+  const head=`<label class="row" style="gap:8px"><input type="checkbox" data-projt="${id}" ${on?"checked":""}> <b>${esc(p.n)}</b></label>
+    <span class="mut" style="font-size:13px">${on?(ph?`phase ${cur+1} of ${p.ph.length}: ${esc(ph.n||"")}${Object.keys(ph.req).length?` · ${left} item${left===1?"":"s"} left to hand in`:""}`:"complete"):"not tracked"}${until}</span>`;
+  if(!on)return `<div class="panel" style="padding:10px 14px"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">${head}</div></div>`;
+  const sel=`<label class="row" style="gap:8px">I'm on <select data-proj="${id}">${p.ph.map((x,i)=>`<option value="${i}" ${cur===i?"selected":""}>phase ${i+1}${x.n?`: ${esc(x.n)}`:""}</option>`).join("")}<option value="${p.ph.length}" ${cur===p.ph.length?"selected":""}>all done</option></select></label>`;
+  const body=!ph?`<p class="mut" style="margin:0">All phases done. Nothing is kept for this project.</p>`:
+    `${ph.note?`<p class="mut" style="margin:0">${esc(ph.note)}</p>`:""}
+    ${Object.keys(ph.req).length?`<table><thead><tr><th>Item</th><th class="num">Needed</th><th class="num">Handed in</th><th class="num">Still to hand in</th><th class="num">In vault</th></tr></thead><tbody>
+    ${Object.entries(ph.req).map(([it,n])=>{const gv=Math.min(n,g[it]||0),rest=n-gv;return `<tr class="r-${I(it).r||""}"><td>${thumb(it)} ${itemBtn(it)}</td><td class="num">${n}</td>
+      <td class="num"><input type="number" min="0" max="${n}" value="${gv}" data-given="${id}|${it}" style="width:64px"></td>
+      <td class="num" style="color:${rest?"var(--warn)":"var(--sell)"}">${rest||"✓"}</td><td class="num">${have(it)}${rest&&have(it)>=rest?' <span class="chip map">enough</span>':""}</td></tr>`}).join("")}
+    </tbody></table>`:""}
+    ${p.ph.length>cur+1?`<p class="mut" style="margin:0;font-size:13px">Later phases also count: ${p.ph.slice(cur+1).map((x,i)=>`phase ${cur+i+2}${Object.keys(x.req).length?` (${Object.entries(x.req).map(([it,n])=>`${n}× ${esc(nm(it))}`).join(", ")})`:""}`).join("; ")}.</p>`:""}`;
+  return `<details class="panel" data-projopen="${id}" ${S.projOpen[id]?"open":""} style="padding:10px 14px"><summary class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px;cursor:pointer">${head}</summary>
+    <div class="stack" style="gap:10px;margin-top:10px">${sel}${body}</div></details>`}
+function projPanel(){const ids=Object.keys(D.projects),cur=ids.filter(id=>D.projects[id].cur||S.projT[id]),old=ids.filter(id=>!cur.includes(id));
+  return `<div class="stack" style="gap:8px"><h2 style="margin:0">Projects</h2>
+    <p class="mut" style="margin:0;font-size:13px">Tick the projects you're working on. Only those count on this list and in the Vault. Open one to set the phase you're on and how many of each item you've already handed in.</p>
+    ${cur.map(projRow).join("")}
+    ${old.length?`<details><summary class="mut" style="cursor:pointer;font-size:13px">Older projects (${old.length})</summary><div class="stack" style="gap:8px;margin-top:8px">${old.map(projRow).join("")}</div></details>`:""}</div>`}
 V.needs=()=>{
-  const rows=Object.keys(NEEDS).map(id=>({id,n:needTotal(id),h:have(id),d:deficit(id),now:NEEDS[id].some(x=>x.kind==="qa"||x.kind==="ha")})).filter(r=>r.n>0).sort((a,b)=>(b.now-a.now)||(b.d-a.d));
+  const rows=Object.keys(NEEDS).map(id=>({id,n:needTotal(id),h:have(id),d:deficit(id),now:NEEDS[id].some(x=>x.kind==="qa"||x.kind==="ha"||x.kind==="pa")})).filter(r=>r.n>0).sort((a,b)=>(b.now-a.now)||(b.d-a.d));
   const missing=rows.filter(r=>r.d>0);
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">What to bring home</div><h1>Shopping list</h1>
@@ -465,9 +492,8 @@ V.needs=()=>{
     </div>
     <div class="panel stack"><h2>Settings</h2>
      <label class="row"><input type="checkbox" id="optFuture" ${S.future?"checked":""}> Count items for locked (future) quests</label>
-     <label class="row"><input type="checkbox" id="optProj" ${S.useProj?"checked":""}> Count projects (Trophy Display and others)</label>
-     ${S.useProj?`<div class="kv">${Object.entries(D.projects).map(([id,p])=>`<dt><label for="p_${id}">${esc(p.n)}</label></dt><dd><select id="p_${id}" data-proj="${id}">${Array.from({length:p.ph.length+1},(_,i)=>`<option value="${i}" ${(S.proj[id]||0)===i?"selected":""}>${i===p.ph.length?"complete":`phases done: ${i}`}</option>`).join("")}</select></dd>`).join("")}</div>`:""}
     </div></div>
+   ${projPanel()}
    <div class="sum"><div><span class="eyebrow">Item types missing</span><b class="v-recycle">${missing.length}</b></div><div><span class="eyebrow">Needed now</span><b>${missing.filter(r=>r.now).length}</b></div><div><span class="eyebrow">Covered</span><b class="v-sell">${rows.length-missing.length}</b></div></div>
    <div class="panel tbl"><table><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Missing</th><th>For</th><th>Where to look</th></tr></thead><tbody>
    ${rows.map(r=>{const s=sources(r.id);const hint=[s.zones.join(", "),s.bots.slice(0,2).map(b=>b.n).join(", "),s.vendors.length?"trader":""].filter(Boolean).join(" · ");
@@ -771,7 +797,7 @@ V.help=()=>{
     <li><span class="pill v-sell">Sell</span> nothing you track needs it. The total sell value is shown at the top.</li>
     <li><span class="pill v-learn">Learn</span> a blueprint: learn it, then sell copies. <span class="pill v-gear">Gear</span> weapons and gear: sell them unless you use them. Open the item and tick <i>I use this in my loadout</i>.</li>
     <li><span class="pill v-mat">Material</span> crafting materials: keep a sensible stock.</li></ul>
-    <p class="note">Verdicts follow your quest progress and workshop levels, so keep those up to date. Turn on <i>Count projects</i> on the Shopping list if you're working on projects.</p>`)}
+    <p class="note">Verdicts follow your quest progress and workshop levels, so keep those up to date. Tick the projects you're working on under <i>Projects</i> on the Shopping list.</p>`)}
   ${sec("quests","Quests",`<p style="margin:0">Each quest shows its objectives, what to hand in (green when you have it), rewards and <b>How to do it</b>: where it's marked on the map, the wiki walkthrough with screenshots, and links to the full guides. Locked quests become available as you finish the ones before them.</p>`)}
   ${sec("items","Items and the shopping list",`<p style="margin:0">${go("needs","Shopping list")} adds up everything you still need and shows where to look. Open any item for its loot zones, ARC that drop it, traders, trades, what recycles into it, MetaForge farming tips, spawn counts per map for nature items (click a map to see the route) and related guides.</p>`)}
   ${sec("skills","Skills",`<p style="margin:0">Pick a playstyle on ${go("skills","Skills")} and set how many skill points you have. The next five points are listed with what they do. <i>Full order</i> lists every point from 1 to 91: 76 from levelling and up to 15 from expeditions.</p>`)}
@@ -888,7 +914,7 @@ document.addEventListener("click",e=>{
   else if(t.id==="addBtn")addItem();
   else if(t.id==="sampleInv"){Object.assign(S.inv,{rusted_gear:6,metal_parts:40,fabric:12,plastic_parts:30,dusty_film_reel:1,acoustic_guitar:1,advanced_arc_powercell:2,wasp_driver:3,adrenaline_shot:5,shotgun_silencer_blueprint:1,air_freshener:2,cat_bed:1,coffee_pot:1});render();toast("Example vault loaded")}
   else if(t.id==="clearInv"){if(t.dataset.arm){S.inv={};render()}else{t.dataset.arm=1;t.textContent="Clear everything?"}}
-  else if(t.id==="bkExport"){$("#bk").value=JSON.stringify({inv:S.inv,done:S.done,hide:S.hide,proj:S.proj,useProj:S.useProj,future:S.future,pins:S.pins})}
+  else if(t.id==="bkExport"){$("#bk").value=JSON.stringify({inv:S.inv,done:S.done,hide:S.hide,proj:S.proj,projT:S.projT,projGiven:S.projGiven,future:S.future,pins:S.pins})}
   else if(t.id==="bkCopy"){const v=$("#bk").value;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("Copied"),()=>{$("#bk").select()})}
   else if(t.id==="bkImport"){try{Object.assign(S,JSON.parse($("#bk").value));render();toast("Backup restored")}catch(_){toast("That backup isn't valid JSON")}}
   else if(t.id==="scanNow"&&api()){api().scan_screen().then(window.onScanResult,()=>window.onScanState(null))}
@@ -935,15 +961,18 @@ document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   else if(d.scanq!==undefined){S.scan.quests[+d.scanq].use=t.checked;render()}
   else if(d.scancount!==undefined){S.scan.items[+d.scancount].count=Math.max(0,+t.value||0);save()}
   else if(d.hide){S.hide[d.hide]=+t.value;render()}
-  else if(d.proj){S.proj[d.proj]=+t.value;render()}
+  else if(d.proj){S.proj[d.proj]=+t.value;S.projGiven[d.proj]={};render()}
+  else if(d.projt){if(t.checked){S.projT[d.projt]=1;S.projOpen[d.projt]=1}else delete S.projT[d.projt];render()}
+  else if(d.given){const [pid,it]=d.given.split("|"),p=D.projects[pid],n=p.ph[S.proj[pid]||0]?.req[it]||0;
+    (S.projGiven[pid]=S.projGiven[pid]||{})[it]=Math.max(0,Math.min(n,Math.round(+t.value||0)));render()}
   else if(t.id==="optFuture"){S.future=t.checked;render()}
-  else if(t.id==="optProj"){S.useProj=t.checked;render()}
   else if(t.id==="pinQ"){S.pinQ=t.value;save()}
   else if(t.id==="routeT"){S.routeT=t.value;render()}
   else if(t.id==="showRoute"){S.showRoute=t.checked;render()}
   else if(t.id==="it"){S.it=t.value;render()}
   else if(t.id==="skPtsN"||t.id==="skPts"){S.skillPts=+t.value;render()}
 });
+document.addEventListener("toggle",e=>{const id=e.target.dataset&&e.target.dataset.projopen;if(id){if(e.target.open)S.projOpen[id]=1;else delete S.projOpen[id];save()}},true);
 document.addEventListener("input",e=>{const t=e.target;
   if(t.id==="skPts"){const n=$("#skPtsN");if(n)n.value=t.value}
   else if(t.id==="qs"){S.qs=t.value;render()} else if(t.id==="is"){S.is=t.value;render()}});

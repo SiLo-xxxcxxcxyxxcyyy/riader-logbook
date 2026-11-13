@@ -1,0 +1,16 @@
+{
+  "_comment": "Projects kept by hand. 'add' holds projects RaidTheory doesn't list yet (same shape as the page: n, ph[{n, req, note}], until). 'current' lists the projects running in the game now; the Shopping list shows them first and every other project under 'Older projects'.",
+  "current": ["trophy_display_project", "souls_offering_project"],
+  "add": {
+    "souls_offering_project": {
+      "n": "Soul's Offering",
+      "until": "2026-11-16",
+      "ph": [
+        {"n": "Vaulto's Offering", "req": {"dead_flowers": 1, "rock_salt": 2, "arc_alloy": 15, "expired_respirator": 1}},
+        {"n": "Ferrovia's Offering", "req": {"dead_flowers": 3, "railway_lantern": 2, "advanced_arc_powercell": 15, "remote_raider_flare": 10}},
+        {"n": "Murteta's Offering", "req": {"fancy_plate": 2, "mask_fragment": 1, "insulation_roll": 1, "fertilizer": 5}},
+        {"n": "Honor the Fallen", "req": {}, "note": "Set off a firework on the Santa Maria Houses rooftop in Buried City."}
+      ]
+    }
+  }
+}
