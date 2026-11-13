@@ -36,6 +36,7 @@ DINO_MARGIN = 0.02            # ...and the lead over the best other item
 LEARNED_MIN = 0.9            # taught pictures only count above this similarity
 DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 NEAR_OK = 0.85                # pixel match this good on the grid box: skip the wider shift search
+PIXEL_SURE = 0.95             # pixel match to a game render this close (and nothing else near): no DINOv2 needed
 CACHE_SAME = 0.99             # similarity (whole slot and count corner, each) at which an earlier reading is reused
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
@@ -185,11 +186,14 @@ class Scanner:
         """The icon part of a slot at 96 px, for exact template comparison."""
         return cv2.resize(slot_bgr, (96, 96), interpolation=cv2.INTER_AREA)[8:64, 10:86].copy()
 
+    def _is_taught(self, iid):
+        return any(t == iid for t, _ in self._taught_tpl)
+
     def _taught_rerank(self, crop, iid):
         """Items you taught that look almost the same (Amplification Module Mk. III vs Mk. IV): compare
         the icon pixel by pixel, in colour, with a small shift search, against each taught picture of
         the read item and of its look-alikes, and take the clearly closer one."""
-        if not self._taught_tpl:
+        if not self._taught_tpl or not any(t == iid for t, _ in self._taught_tpl):
             return iid
         s = cv2.resize(crop, (96, 96), interpolation=cv2.INTER_AREA)
         scores = {}
@@ -359,7 +363,16 @@ class Scanner:
             old, (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
             pending.append((old, (x, y, w, h), img[y:y + h, x:x + w].copy()))
             vecs.append(cv)
-        embs = self._dino.embed([self._dino_size(c) for _, _, c in pending]) if self._dino and pending else None
+        # DINOv2 for every slot except clear pixel matches (to a game render or a taught slot): almost exact, and no other
+        # item anywhere near (colour variants such as keycards always have a close second)
+        need = [n for n, (((iid, score), (alt, alt_score)), _, _) in enumerate(pending)
+                if not (score >= PIXEL_SURE and score - alt_score >= 0.08)]
+        embs = None
+        if self._dino and need:
+            e = self._dino.embed([self._dino_size(pending[n][2]) for n in need])
+            embs = [None] * len(pending)
+            for n, v in zip(need, e):
+                embs[n] = v
         for n, (((iid, score), (alt, alt_score)), (x, y, w, h), c) in enumerate(pending):
             slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1,
                     "cvec": vecs[n]}
@@ -368,13 +381,14 @@ class Scanner:
             # unless DINOv2 rates that item clearly lower than its best. The pixel features hardly see
             # colour: a red Spaceport keycard matched a taught white Dam keycard at 0.99.
             exact = score >= LEARNED_MIN
-            if exact and embs is not None:
-                s = self.dino_emb @ embs[n]
+            e = embs[n] if embs is not None else None
+            if exact and e is not None:
+                s = self.dino_emb @ e
                 fam = self.family(iid)[0]
                 mine = max((float(s[k]) for k, d_id in enumerate(self.dino_ids) if self.family(d_id)[0] == fam), default=-1.0)
                 exact = mine >= float(s.max()) - 0.015
-            if embs is not None and not exact:
-                d = self._dino_decide(embs[n])
+            if e is not None and not exact:
+                d = self._dino_decide(e)
                 sure = d is not None                             # unsure: ask the user rather than guess
                 if d is not None:
                     did, dscore, margin, fam_best = d
@@ -386,7 +400,7 @@ class Scanner:
                     score = dscore if margin >= 0.05 else min(dscore, 0.7)
             if not sure:
                 unknown += 1
-                guess = self._guesses(embs[n], c) if embs is not None else []
+                guess = self._guesses(e, c) if e is not None else []
                 found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score, "guess": guess})
                 continue
             tiered = self._with_tier(c, self._taught_rerank(c, iid))
@@ -667,15 +681,15 @@ class Scanner:
     def row_numbers(self, img, rows, slots_total):
         """Where each row of this picture sits in the whole stash (0 = first row), read from the
         scrollbar: the list scrolls ~11.9 px per scrollbar px with 73 rows (fitted on real 1080p
-        frames: scroll = (thumb top - 324) * (rows * 104 - 682) / 579, first row at y 268 when at the
-        top). Only for the all-items view; None when the thumb isn't clear (the mouse pointer on it)."""
+        frames: the thumb runs from y 271 to 941, scroll = (thumb top - 271) * (rows * 104 - 682) / 579,
+        and at the top the first row sits at y 271). Only for the all-items view; None when the thumb isn't clear (the mouse pointer on it)."""
         t = self.stash_thumb(img)
         s = img.shape[0] / 1080
         if not t or abs(t[1] - 90 * s) > 6 * s or not rows:
             return None
         pitch = 104 * s
         n_rows = -(-slots_total // 4)
-        scroll = (t[0] - 324 * s) * (n_rows * pitch - 682 * s) / (579 * s)
+        scroll = (t[0] - 271 * s) * (n_rows * pitch - 682 * s) / (579 * s)
         out = []
         for r in rows:
             v = (scroll + r[0]["box"][1] - 268 * s) / pitch
@@ -707,6 +721,7 @@ class Scanner:
             if best is None:
                 return False                             # can't tell where this is: wait for a clearer picture
             nums = [best[1] + i for i in range(len(rows))]
+        self._last_nums = nums
         new_idx = [i for i, n in enumerate(nums) if n not in known]
         if not new_idx:
             return False
@@ -817,6 +832,19 @@ class Scanner:
         self._variant_crops[(to_id, key)] = crop
         return self._vault_result()
 
+    def _missing_rows(self):
+        """Stash rows (all-items view) not read yet, and where the last picture was."""
+        if self._cat not in self._abs:
+            return None
+        used = (self._cats.get(self._cat) or {}).get("used")
+        if not used:
+            return None
+        known = self._abs[self._cat]
+        miss = [i for i in range(-(-used // 4)) if i not in known]
+        cur = getattr(self, "_last_nums", None) or [0]
+        return {"rows": len(miss), "above": sum(1 for i in miss if i < min(cur)),
+                "below": sum(1 for i in miss if i > max(cur))}
+
     def _blocks(self):
         """How many separate stretches of rows were read (1 = no rows missing in between)."""
         ks = sorted(self._abs.get(self._cat, {}))
@@ -834,6 +862,7 @@ class Scanner:
                 # the all-items view plus a category in one session counts that category twice
                 "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "gap": self._gap_now,
                 "runs": self._blocks() if self._cat in self._abs else len(self._seq.get(self._cat, [])),
+                "missing": self._missing_rows(),
                 "value": self._value}
 
     # ---------- quests ----------

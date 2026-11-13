@@ -329,6 +329,12 @@ class Watcher(threading.Thread):
             elif st.get("used") and st.get("slots", 0) >= st["used"]:
                 status = (f"All {st['used']} read" if st.get("slots") == st["used"] else
                           f"Read {st['slots']} of {st['used']}: check it in the app", "ok" if st.get("slots") == st["used"] else "warn")
+            elif (res.get("missing") or {}).get("above"):
+                n = res["missing"]["above"]
+                status = (f"{n} row{'s' if n > 1 else ''} missed above: scroll back up", "warn")
+            elif (res.get("missing") or {}).get("below"):
+                n = res["missing"]["below"]
+                status = (f"{st['slots']} / {st['used']} read · {n} row{'s' if n > 1 else ''} to go, scroll down", "busy")
             elif st.get("used"):
                 status = (f"{st['slots']} / {st['used']} read · scroll on", "busy")
             if status:
