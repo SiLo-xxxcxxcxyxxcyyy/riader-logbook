@@ -179,7 +179,19 @@ def update_data(api: Api):
 
 def start_hotkeys(api: Api):
     def scan():
-        threading.Thread(target=lambda: api._push(api.scan_screen()), daemon=True).start()
+        def run():
+            try:
+                logging.info("scan: start")
+                res = api.scan_screen()
+                logging.info("scan: %s", {k: (v if k != "items" and k != "quests" else len(v)) for k, v in res.items()
+                                          if k not in ("debug",)})
+                api._push(res)
+            except Exception:
+                logging.exception("scan crashed")
+        if api._lock.locked():
+            logging.info("scan: ignored, previous scan still running")
+            return
+        threading.Thread(target=run, daemon=True).start()
 
     def new_vault():
         api.reset_vault_session()

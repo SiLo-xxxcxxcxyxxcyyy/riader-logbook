@@ -39,6 +39,14 @@ except OSError:
 logging.basicConfig(filename=LOG, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", encoding="utf-8")
 logging.info("---- launch: %s", sys.argv)
 
+# record crashes: Python errors in any thread, and native crashes (OCR/window libraries) via faulthandler
+import faulthandler  # noqa: E402
+import threading  # noqa: E402
+_crash = open(os.path.join(DATA_DIR, "crash.log"), "a", encoding="utf-8")
+faulthandler.enable(_crash)
+sys.excepthook = lambda t, v, tb: logging.critical("uncaught error", exc_info=(t, v, tb))
+threading.excepthook = lambda a: logging.critical("uncaught error in thread %s", a.thread, exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import updater  # noqa: E402
 
