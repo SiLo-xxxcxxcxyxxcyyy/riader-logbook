@@ -158,7 +158,7 @@ const MATS=new Set(["Basic Material","Refined Material","Topside Material","Natu
 
 /* ---------- state ---------- */
 const KEY="raider-logbook-v1";
-const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:false,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"avail",vf:"all",scan:null},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
+const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:false,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"mine",vf:"all",scan:null},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -266,7 +266,8 @@ function setQty(id,n){n=Math.max(0,Math.floor(n||0));if(n)S.inv[id]=n;else delet
 /* ---------- views ---------- */
 const V={};
 V.lobby=()=>{
-  const avail=Object.keys(Q).filter(id=>qStatus(id)==="avail");
+  const mine=Object.keys(S.active||{}).filter(id=>Q[id]&&!S.done[id]);
+  const avail=mine.length?mine:Object.keys(Q).filter(id=>qStatus(id)==="avail");
   const byMap={};avail.forEach(id=>(Q[id].m||["any"]).forEach(m=>(byMap[m]=byMap[m]||[]).push(id)));
   const defs=Object.keys(NEEDS).filter(id=>deficit(id)>0);
   const ranking=Object.keys(MAPN).filter(m=>!m.startsWith("stella_montis_")).map(m=>{
@@ -346,16 +347,20 @@ function setActive(ids){ // recompute progress from the active quests, keeping m
 V.quests=()=>{
   const counts={avail:0,locked:0,done:0};Object.keys(Q).forEach(id=>counts[qStatus(id)]++);
   const term=(S.qs||"").toLowerCase();
-  const list=Object.keys(Q).filter(id=>(S.qf==="all"||qStatus(id)===S.qf)&&(!term||(Q[id].n+" "+Q[id].tr+" "+Q[id].o.join(" ")).toLowerCase().includes(term))).sort((a,b)=>Q[a].tr.localeCompare(Q[b].tr)||Q[a].n.localeCompare(Q[b].n));
+  const isMine=id=>!!(S.active&&S.active[id])&&!S.done[id];
+  counts.mine=Object.keys(Q).filter(isMine).length;counts.avail=Object.keys(Q).filter(id=>qStatus(id)==="avail"&&!isMine(id)).length;
+  if(!["mine","avail","locked","done","all"].includes(S.qf))S.qf="mine";
+  const fit=id=>S.qf==="all"||(S.qf==="mine"?isMine(id):S.qf==="avail"?(qStatus(id)==="avail"&&!isMine(id)):qStatus(id)===S.qf);
+  const list=Object.keys(Q).filter(id=>fit(id)&&(!term||(Q[id].n+" "+Q[id].tr+" "+Q[id].o.join(" ")).toLowerCase().includes(term))).sort((a,b)=>Q[a].tr.localeCompare(Q[b].tr)||Q[a].n.localeCompare(Q[b].n));
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Quests · ${counts.done}/${Object.keys(Q).length} done</div><h1>Your progress</h1>
    <p class="mut" style="margin:0;max-width:65ch">Tell the app which quests are in your quest log right now. Everything before them is marked done, so it knows where you are.</p>
-   ${S.qf==="avail"&&!Object.keys(S.active||{}).length?`<p class="note" style="margin:6px 0 0">This list shows quests you can take <b>now</b>, according to your progress. Is one missing from your log in game? Then you've finished it: press <i>Not in my quest log</i>. Faster: open your active quests at their traders, press <span class="kbd">F9</span> on each and <i>Add to my progress</i>, and everything before them is marked done.</p>`:""}
+   ${S.qf==="avail"?`<p class="note" style="margin:6px 0 0">Unlocked by your progress but not added to your log. If one isn't in your log in game, you've finished it: press <i>Not in my quest log</i>.</p>`:""}
    <div class="row" style="margin-top:6px">${S.doneUndo?`<button class="btn sm pri" id="undoQuests">Undo last change</button>`:""}<button class="btn sm" id="resetQuests">Reset all quests</button></div></div>
    ${activePanel()}
-   <div class="row"><div class="filters">${[["avail","Available"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
+   <div class="row"><div class="filters">${[["mine","In my log"],["avail","Unlocked"],["locked","Locked"],["done","Done"],["all","All"]].map(([k,l])=>`<button data-qf="${k}" aria-pressed="${S.qf===k}">${l} ${k==="all"?Object.keys(Q).length:counts[k]}</button>`).join("")}</div>
    <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
-   <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">Nothing matches this filter.</div>`}</div></div>`;
+   <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">${S.qf==="mine"&&!term?"No quests in your log yet. Add the quests you have in game in the box above.":"Nothing matches this filter."}</div>`}</div></div>`;
 };
 V.vault=()=>{
   const ids=Object.keys(S.inv);
@@ -794,7 +799,7 @@ document.addEventListener("click",e=>{
   else if(t.id==="scanReset"&&api()){api().reset_vault_session().then(()=>toast("New vault scan started. Scan each vault page with F9."))}
   else if(t.id==="actAddBtn")addActive();
   else if(t.id==="actAll"){const act=Object.keys(S.active||{}).filter(id=>Q[id]);snapshotDone();const keep=new Set(act);act.forEach(id=>descendants(id).forEach(x=>keep.add(x)));
-    Object.keys(Q).forEach(id=>{if(!keep.has(id)&&!(needsConfirm(id)&&!S.done[id]))S.done[id]=true});S.qf="avail";render();toast("Progress set from your quest log")}
+    Object.keys(Q).forEach(id=>{if(!keep.has(id)&&!(needsConfirm(id)&&!S.done[id]))S.done[id]=true});S.qf="mine";render();toast("Progress set from your quest log")}
   else if(d.actdel){const ids=Object.keys(S.active||{}).filter(i=>i!==d.actdel);snapshotDone();delete S.active[d.actdel];
     // drop the quests that were only marked done because of the removed one
     const keep=new Set();ids.forEach(i=>ancestors(i).forEach(a=>keep.add(a)));ancestors(d.actdel).forEach(a=>{if(!keep.has(a))delete S.done[a]});render()}
@@ -814,7 +819,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="addNa
 function addActive(){const v=($("#actAdd").value||"").trim().toLowerCase();if(!v)return;
   const id=Object.keys(Q).find(k=>Q[k].n.toLowerCase()===v)||Object.keys(Q).find(k=>Q[k].n.toLowerCase().startsWith(v))||Object.keys(Q).find(k=>Q[k].n.toLowerCase().includes(v));
   if(!id){toast("No quest with that name");return}
-  setActive([...new Set([...Object.keys(S.active||{}),id])]);S.qf="avail";render();$("#actAdd")?.focus();toast(`Added ${Q[id].n}`)}
+  setActive([...new Set([...Object.keys(S.active||{}),id])]);S.qf="mine";render();$("#actAdd")?.focus();toast(`Added ${Q[id].n}`)}
 document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   if(d.qty){setQty(d.qty,+t.value);render()}
   else if(d.use){S.use=S.use||{};if(t.checked)S.use[d.use]=1;else delete S.use[d.use];save();openItem(d.use)}
@@ -843,8 +848,8 @@ document.addEventListener("toggle",e=>{if(e.target.id==="skOrderBox"){S.skOrder=
 {const m=D.meta;if(m)$("#foot").innerHTML=`Data updated ${esc(new Date(m.built).toLocaleString())} from ${m.sources.map(x=>`<a href="${esc(x.u)}" target="_blank" rel="noopener">${esc(x.n)}</a> (${esc(x.what)})`).join(", ")}. Not affiliated with Embark Studios.`}
 window.addEventListener("pywebviewready",()=>{DESK=true;document.body.classList.add("desk");render();
   try{api().app_info().then(i=>{if(!i)return;const f=$("#foot");const up={updated:"just updated",current:"up to date",unreachable:"couldn't reach GitHub",failed:"update failed",new_exe_needed:"new .exe needed",skipped:"update skipped"}[i.update]||i.update||"";
-    if(f)f.insertAdjacentHTML("afterbegin",`<span class="mono">App ${esc(i.app)} · data version ${esc(i.code)}${up?` · ${esc(up)}`:""}${i.update_error?` (${esc(String(i.update_error).slice(0,140))})`:""}</span><br>`);
-    if(i.new_app){const m=$("#main");if(m)m.insertAdjacentHTML("afterbegin",`<div class="panel row" style="justify-content:space-between;margin-bottom:12px;border-color:var(--accent)"><span>A new version of the app is available.</span><a class="btn pri" href="${esc(i.new_app)}" target="_blank" rel="noopener">Download it</a></div>`)}})}catch(e){}});
+    if(f&&!$("#appver"))f.insertAdjacentHTML("afterbegin",`<span class="mono" id="appver">App ${esc(i.app)} · data version ${esc(i.code)}${up?` · ${esc(up)}`:""}${i.update_error?` (${esc(String(i.update_error).slice(0,140))})`:""}</span><br>`);
+    if(i.new_app&&!$("#newapp")){const m=$("#main");if(m)m.insertAdjacentHTML("afterbegin",`<div class="panel row" id="newapp" style="justify-content:space-between;margin-bottom:12px;border-color:var(--accent)"><span>A new version of the app is available.</span><a class="btn pri" href="${esc(i.new_app)}" target="_blank" rel="noopener">Download it</a></div>`)}})}catch(e){}});
 const h=(location.hash||"").slice(1);if(V[h])S.tab=h;
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(V[h]&&h!==S.tab){S.tab=h;render()}});
 render();
