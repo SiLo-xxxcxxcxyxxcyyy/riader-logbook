@@ -308,8 +308,16 @@ class Scanner:
         for n, (((iid, score), (alt, alt_score)), (x, y, w, h), c) in enumerate(pending):
             slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1}
             sure = score >= MATCH_MIN
-            # a near-exact pixel match (a picture you taught, or the same render) is reliable: keep it
-            if embs is not None and score < LEARNED_MIN:
+            # a near-exact pixel match (a picture you taught, or the same render) is reliable: keep it,
+            # unless DINOv2 rates that item clearly lower than its best. The pixel features hardly see
+            # colour: a red Spaceport keycard matched a taught white Dam keycard at 0.99.
+            exact = score >= LEARNED_MIN
+            if exact and embs is not None:
+                s = self.dino_emb @ embs[n]
+                fam = self.family(iid)[0]
+                mine = max((float(s[k]) for k, d_id in enumerate(self.dino_ids) if self.family(d_id)[0] == fam), default=-1.0)
+                exact = mine >= float(s.max()) - 0.015
+            if embs is not None and not exact:
                 d = self._dino_decide(embs[n])
                 sure = d is not None                             # unsure: ask the user rather than guess
                 if d is not None:
