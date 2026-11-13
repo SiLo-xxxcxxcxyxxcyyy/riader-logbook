@@ -418,7 +418,7 @@ class Scanner:
                 continue                    # a weapon or mod tier: the corner holds its numeral, never a count
             x, y, w, h = s["box"]
             best = None
-            for (ya, yb, xa, xb) in ((0.70, 1.0, 0.45, 1.0), (0.0, 0.30, 0.45, 1.0)):   # bottom-right, top-right
+            for corner, (ya, yb, xa, xb) in enumerate(((0.70, 1.0, 0.45, 1.0), (0.0, 0.30, 0.45, 1.0))):   # bottom-right, top-right
                 crop = img[y + int(h * ya):y + int(h * yb), x + int(w * xa):x + int(w * xb)]
                 if crop.size == 0:
                     continue
@@ -438,11 +438,13 @@ class Scanner:
                     m = re.fullmatch(r"([x×X])?\s*(\d{1,4})\s*[x×X]?", t)
                     # the game writes stack counts as "×24"; bare digits may be a misread tier numeral (II -> 11)
                     limit = 9999 if (m and m.group(1)) else max(st, 1)
+                    if corner and not (m and m.group(1)):
+                        continue            # top corner: only an explicit "×N" (it's mostly empty there)
                     if m and 1 <= int(m.group(2)) <= limit and conf > 0.3:
                         if best is None or conf > best[1]:
                             best = (int(m.group(2)), conf)
-                if best and best[1] > 0.8:
-                    break                   # read clearly in the bottom corner: no need for the top one
+                if best:
+                    break                   # the count sits bottom right; the top corner only when that's empty
             if best:
                 s["count"] = best[0]
 
@@ -455,6 +457,7 @@ class Scanner:
         self._variant_crops = {}   # (item_id, slot key) -> picture, so a wrong match can be corrected
         self._cats = {}            # stash category index (0 = all) -> {"used", "cap", "slots"}
         self._cat = None           # category of the last page
+        self._abs = {}             # category -> {stash row number: row} (all-items view, automatic reading)
         self._seq, self._pos = {}, {}   # category -> rows seen so far in stash order / where the last page was
         self._value = None         # stash value in creds, from the header
         self._gap_now = False      # the last page didn't join up with what was read
@@ -613,13 +616,91 @@ class Scanner:
             v["score"] = min(v["score"], round(s["score"], 3))
             self._variant_crops.setdefault((s["id"], s["key"]), s["crop"])
 
-    def _add_vault_page(self, page):
+    @staticmethod
+    def stash_thumb(img):
+        """The stash scrollbar's thumb: (top, length) in pixels, or None. A light bar right of the
+        grid (x ~585 at 1080p) whose top follows the scroll position."""
+        H = img.shape[0]
+        s = H / 1080
+        g = cv2.cvtColor(img[int(200 * s):int(1000 * s), int(576 * s):int(596 * s)], cv2.COLOR_BGR2GRAY)
+        best = None
+        for x in range(g.shape[1]):
+            on = np.concatenate([g[:, x] > 60, [False]])
+            start = None
+            for i, v in enumerate(on):
+                if v and start is None:
+                    start = i
+                elif not v and start is not None:
+                    if best is None or i - start > best[1]:
+                        best = (start, i - start)
+                    start = None
+        if not best:
+            return None
+        return best[0] + int(200 * s), best[1]
+
+    def row_numbers(self, img, rows, slots_total):
+        """Where each row of this picture sits in the whole stash (0 = first row), read from the
+        scrollbar: the list scrolls ~11.9 px per scrollbar px with 73 rows (fitted on real 1080p
+        frames: scroll = (thumb top - 324) * (rows * 104 - 682) / 579, first row at y 268 when at the
+        top). Only for the all-items view; None when the thumb isn't clear (the mouse pointer on it)."""
+        t = self.stash_thumb(img)
+        s = img.shape[0] / 1080
+        if not t or abs(t[1] - 90 * s) > 6 * s or not rows:
+            return None
+        pitch = 104 * s
+        n_rows = -(-slots_total // 4)
+        scroll = (t[0] - 324 * s) * (n_rows * pitch - 682 * s) / (579 * s)
+        out = []
+        for r in rows:
+            v = (scroll + r[0]["box"][1] - 268 * s) / pitch
+            if abs(v - round(v)) > 0.3:                  # doesn't land on a row: don't trust it
+                return None
+            out.append(int(round(v)))
+        return out
+
+    def _add_vault_page_abs(self, page, rows, nums):
+        """All-items view with row numbers: each stash row is counted once, by its number. A picture
+        without numbers (pointer on the scrollbar) is placed by matching rows already read."""
+        known = self._abs.setdefault(self._cat, {})
+        page_rows = [{"feats": [s["feat"] for s in r],
+                      "slots": [{k: s[k] for k in ("id", "count", "key", "unknown", "score", "guess") if k in s} for s in r]}
+                     for r in rows]
+        if nums is None:
+            best = None
+            for o in range(min(known, default=0) - len(rows), max(known, default=0) + 2):
+                ov = 0
+                for i, r in enumerate(page_rows):
+                    k = known.get(o + i)
+                    if k is not None:
+                        if not self._same_row(r["feats"], k["feats"]):
+                            ov = -1
+                            break
+                        ov += 1
+                if ov > 0 and (best is None or ov > best[0]):
+                    best = (ov, o)
+            if best is None:
+                return False                             # can't tell where this is: wait for a clearer picture
+            nums = [best[1] + i for i in range(len(rows))]
+        new_idx = [i for i, n in enumerate(nums) if n not in known]
+        if not new_idx:
+            return False
+        for i in new_idx:
+            known[nums[i]] = page_rows[i]
+        self._pages.append(len(rows))
+        self._gap_now = False
+        self._count([dict(s, crop=c["crop"]) for i in new_idx for s, c in zip(page_rows[i]["slots"], rows[i])])
+        self._unknown += page["unknown"]
+        return True
+
+    def _add_vault_page(self, page, nums=None):
         """Add a page, counting only rows not seen before. The rows read so far are kept in order, in
         runs (per category): a page that lines up with a run extends it (scrolling a little, back up, or
         the same page again counts nothing twice); one that lines up with nothing starts a new run (the
         stash opened in the middle, or a jump), and two runs that come to overlap are joined, taking
         back the rows counted in both."""
         rows = self._rows(page["slots"])
+        if self._auto and self._cat == 0:
+            return self._add_vault_page_abs(page, rows, nums)
         page_rows = [{"feats": [s["feat"] for s in r],
                       "slots": [{k: s[k] for k in ("id", "count", "key", "unknown", "score", "guess") if k in s} for s in r]}
                      for r in rows]
@@ -691,7 +772,7 @@ class Scanner:
             if u is None:
                 return None
             crop, count = self._unknown_crops.pop(key), u["count"]
-        for runs in self._seq.values():                      # the stored rows follow the move
+        for runs in list(self._seq.values()) + [[list(d.values())] for d in self._abs.values()]:   # stored rows follow
             for run in runs:
                 for r in run:
                     for s in r["slots"]:
@@ -709,6 +790,11 @@ class Scanner:
         self._variant_crops[(to_id, key)] = crop
         return self._vault_result()
 
+    def _blocks(self):
+        """How many separate stretches of rows were read (1 = no rows missing in between)."""
+        ks = sorted(self._abs.get(self._cat, {}))
+        return sum(1 for i, k in enumerate(ks) if i == 0 or k != ks[i - 1] + 1)
+
     def _vault_result(self):
         items = sorted(({**t, "variants": sorted(t["variants"].values(), key=lambda v: v["score"])}
                         for t in self._totals.values()),
@@ -720,7 +806,7 @@ class Scanner:
                 "categories": cats,
                 # the all-items view plus a category in one session counts that category twice
                 "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "gap": self._gap_now,
-                "runs": len(self._seq.get(self._cat, [])),
+                "runs": self._blocks() if self._cat in self._abs else len(self._seq.get(self._cat, [])),
                 "value": self._value}
 
     # ---------- quests ----------
@@ -837,7 +923,10 @@ class Scanner:
                 c = self._cats.setdefault(cat, {"used": None, "cap": None, "slots": 0})
                 if head:
                     c["used"], c["cap"] = head["used"], head["cap"]
-            added = self._add_vault_page(page)
+            nums = None
+            if auto and self._cat == 0 and head and head.get("cap"):
+                nums = self.row_numbers(img, self._rows(page["slots"]), head["cap"])
+            added = self._add_vault_page(page, nums)
             # what this picture holds, slot by slot (for the in-game marks)
             frame = [[*map(int, s["box"]), None if s.get("unknown") else s["id"], int(s["count"])] for s in page["slots"]]
             return {**self._vault_result(), "duplicate": not added, "frame": frame}
