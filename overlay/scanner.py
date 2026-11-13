@@ -296,8 +296,14 @@ class Scanner:
         order = [order[0]] + [j for j in order[1:] if self.ref_ids[j] != self.ref_ids[order[0]]]
         return [(self.ref_ids[j], float(best_sims[j])) for j in order[:k]], best_crop
 
-    def scan_vault(self, img, ocr_lines=None):
+    def scan_vault(self, img, ocr_lines=None, view=None):
+        """view: (top, bottom) of the stash's visible area in pixels. Rows cut off by its edges (smooth
+        scrolling leaves one half shown) are skipped: they'd be read as a different row than the same
+        row seen whole, and break the joining of pages."""
         slots = self.find_slots(img)
+        if view and slots:
+            top, bottom = view
+            slots = [s for s in slots if s[1] >= top - 2 and s[1] + s[3] <= bottom + 2]
         if len(slots) < 4:
             return None
         found, unknown, pending, cached, vecs = [], 0, [], [], []
@@ -717,7 +723,12 @@ class Scanner:
                 if q["score"] > self._quests.get(q["id"], {}).get("score", 0):
                     self._quests[q["id"]] = q
             return {"kind": "quests", "quests": sorted(self._quests.values(), key=lambda q: -q["score"]), "added": new}
-        page = self.scan_vault(img)
+        # the stash list's visible area at 1080p: under the CATEGORY bar to above the hotkey bar. Only for
+        # automatic reading: it sees every scroll step, so a cut-off row comes whole in a later frame;
+        # F9 pages a whole screen at a time and would lose it
+        kk = small.shape[0] / 1080
+        stash_view = (int(262 * kk * h / small.shape[0]), int(944 * kk * h / small.shape[0])) if auto and (fast or any(_norm(t) == "stash" for t, _, _ in (lines or []))) else None
+        page = self.scan_vault(img, view=stash_view)
         if page:
             k = small.shape[0] / 1080
             head, label = (fast[0], fast[1]) if fast else self.read_stash_header(lines, k)
