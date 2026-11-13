@@ -31,7 +31,13 @@ Run the game in **borderless windowed** mode so the overlay can stay on top.
 
 The scanner only takes screenshots, like OBS or Discord. It does not read game memory or files and never sends input to the game.
 
-### Run from source
+### Run without the .exe (recommended)
+Windows Defender and browsers block the unsigned .exe as a false positive, so the reliable way is running from source:
+1. Install **Python 3.12** from https://www.python.org/downloads/ and tick **Add python.exe to PATH**.
+2. On GitHub press **Code → Download ZIP**, unzip it anywhere.
+3. Double-click **`run_from_source.bat`**. The first start installs the libraries (a few minutes); later starts take seconds.
+
+### Run from source (manual)
 ```
 pip install -r overlay/requirements.txt
 git clone --depth 1 https://github.com/RaidTheory/arcraiders-data.git data/arcraiders-data

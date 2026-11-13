@@ -3,6 +3,5 @@ dist/
 release/
 build/
 *.spec
-overlay/assets/
 __pycache__/
 /*.png

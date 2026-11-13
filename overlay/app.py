@@ -202,6 +202,10 @@ def main(launch=None):
     os.makedirs(PAGE_DIR, exist_ok=True)
     if os.path.exists(BUNDLED_UI) and (not os.path.exists(UI) or os.path.getmtime(BUNDLED_UI) > os.path.getmtime(UI)):
         shutil.copyfile(BUNDLED_UI, UI)               # first run, or the app itself was updated
+    if not os.path.exists(UI):                        # running from source: build the page before the window opens
+        import build
+        build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR, assets=False,
+                  log=lambda m: logging.info("[first build] %s", m))
     with mss.mss() as sct:
         mon = sct.monitors[min(a.monitor, len(sct.monitors) - 1)]
     height = min(1000, mon["height"] - 80)
