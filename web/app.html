@@ -871,7 +871,10 @@ function addActiveQuest(id){
   Object.keys(S.active).forEach(a=>{if(anc.has(a))delete S.active[a]});
   S.active[id]=1;anc.forEach(a=>S.done[a]=true);delete S.done[id];descendants(id).forEach(x=>delete S.done[x]);
 }
-window.onAutoScan=r=>{
+window.onAutoScan=r=>{try{autoScan(r)}catch(e){jsError("onAutoScan: "+(e&&e.stack||e))}};
+function jsError(m){try{api()&&api().js_error&&api().js_error(String(m).slice(0,2000))}catch(_){}}
+window.addEventListener("error",e=>jsError(`${e.message} @${e.lineno}:${e.colno}`));
+function autoScan(r){
   if(!r||!S.auto)return;
   if(r.kind==="quests"){
     if(r.level){S.level=r.level;S.levelAt=Date.now()}
@@ -894,10 +897,11 @@ window.onAutoScan=r=>{
     if(st.slots>st.used||r.mixed){S.scan=r;autoBar(`Read ${st.slots} slots but the stash has ${st.used}. Check it on the Scan tab.`);render();return}
     if((r.unknowns||[]).length){S.scan=r;S.tab="scan";render();toast(`Stash read. ${plural(r.unknowns.length,"item")} need a name before the vault is updated.`);return}
     S.inv={};r.items.forEach(x=>{if(x.count>0)S.inv[x.id]=x.count});
-    S.stashInfo.done=Date.now();S.scan=null;render();
+    S.stashInfo.done=Date.now();S.scan=null;save();render();
     autoBar(`Stash read: all ${st.used} slots. Vault updated.`);toast(`Vault updated from the stash: ${plural(r.items.length,"item type")}`);
   }
-};
+}
+
 function autoPanel(){
   return `<div class="panel stack desk-only"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Automatic reading</h2>
     <label class="row"><input type="checkbox" id="optAuto" ${S.auto?"checked":""}> On</label></div>

@@ -191,6 +191,11 @@ class Api:
                 self._marks.clear()
         return bool(self._marks and self._marks.enabled)
 
+    def js_error(self, msg):
+        """An error in the page (logged so a problem can be found later)."""
+        logging.warning("page error: %s", str(msg)[:2000])
+        return True
+
     def auto_status(self):
         w = self._watcher
         return {"on": bool(w and w.on), "state": w.state if w else "off", "excluded": sorted(self._excluded)}
@@ -430,7 +435,7 @@ class Watcher(threading.Thread):
         try:
             self.api._window.evaluate_js(f"window.onAutoScan&&window.onAutoScan({json.dumps(res)})")
         except Exception:
-            pass
+            logging.exception("auto read: sending the result to the page failed")
 
 
 def update_data(api: Api):
