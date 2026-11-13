@@ -535,63 +535,64 @@ class Scanner:
         pictures, not the recognised names, so one misread slot doesn't break the overlap."""
         return len(a) == len(b) and all(float(x @ y) > ROW_SAME for x, y in zip(a, b))
 
-    def _add_vault_page(self, page):
-        """Add a page, counting only rows not seen before. Every row of the stash seen so far is kept in
-        order (per category); a new page is placed where its rows line up with them, so scrolling a
-        little, scrolling back up or seeing the same page again counts nothing twice."""
-        rows = self._rows(page["slots"])
-        feats = [[s["feat"] for s in r] for r in rows]
-        seq = self._seq.setdefault(self._cat, [])
-        best = None                                              # (overlap, -distance to last place, offset)
-        for o in range(-len(feats) + 1, len(seq) + 1):           # page row i lines up with seq[o + i]
+    def _align(self, feats, seq):
+        """Best place for a page's rows in a run of known rows: (overlap, offset) with page row i at
+        seq[offset + i], every overlapping row the same; None if it shares no row."""
+        best = None
+        for o in range(-len(feats) + 1, len(seq) + 1):
             ov = 0
             for i, f in enumerate(feats):
                 j = o + i
                 if 0 <= j < len(seq):
-                    if not self._same_row(f, seq[j]):
+                    if not self._same_row(f, seq[j]["feats"]):
                         ov = -1
                         break
                     ov += 1
-            if ov > 0:
-                cand = (ov, -abs(o - self._pos.get(self._cat, 0)), o)
-                best = cand if best is None or cand > best else best
-        if best is None and seq and not self._auto:
-            o = len(seq)                       # F9 a page at a time: pages follow each other without overlap
-            self._gaps += 1
-        elif best is None and seq:
-            # automatic reading sees every settled view, so a page sharing no row with what was read means
-            # nothing on this page was read before: rows in between were skipped (scrolled too far).
-            # Counting it would leave a hole; wait for a page that joins up (scroll back up a bit).
-            self._gaps += 1
-            self._gap_now = True
-            return False
-        else:
-            o = best[2] if best else 0
-        self._gap_now = False
-        new_idx = [i for i in range(len(rows)) if not 0 <= o + i < len(seq)]
-        if not new_idx:                                          # the same rows again
-            self._pos[self._cat] = o
-            return False
-        above = [feats[i] for i in new_idx if o + i < 0]
-        below = [feats[i] for i in new_idx if o + i >= len(seq)]
-        seq[:0] = above
-        seq.extend(below)
-        self._pos[self._cat] = o + len(above)
-        self._last_rows = feats
-        self._pages.append(len(rows))
-        self._last_rows = feats
-        new = [s for i in new_idx for s in rows[i]]
-        self._slots += len(new)
+            if ov > 0 and (best is None or ov > best[0]):
+                best = (ov, o)
+        return best
+
+    @staticmethod
+    def _overlap(a, b, same):
+        """Largest k with the last k rows of run a equal to the first k rows of run b (0 if none)."""
+        for k in range(min(len(a), len(b)), 0, -1):
+            if all(same(x["feats"], y["feats"]) for x, y in zip(a[-k:], b[:k])):
+                return k
+        return 0
+
+    def _count(self, slots, sign=1):
+        """Add (sign 1) or take back (sign -1) slots in the totals."""
+        self._slots += sign * len(slots)
         cat = self._cats.get(self._cat)
         if cat is not None:
-            cat["slots"] += len(new)
-        for s in new:
+            cat["slots"] += sign * len(slots)
+        for s in slots:
             if s.get("unknown"):
                 key = s["key"]
-                u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"]),
-                                                    "guess": s.get("guess") or []})
-                u["count"] += s["count"]
-                self._unknown_crops.setdefault(key, s["crop"])
+                if sign > 0:
+                    u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"]),
+                                                        "guess": s.get("guess") or []})
+                    self._unknown_crops.setdefault(key, s["crop"])
+                else:
+                    u = self._unknowns.get(key)
+                    if u is None:
+                        continue
+                u["count"] += sign * s["count"]
+                if u["count"] <= 0:
+                    self._unknowns.pop(key, None)
+                continue
+            if sign < 0:
+                t = self._totals.get(s["id"])
+                if t is None:
+                    continue
+                t["count"] -= s["count"]
+                v = t["variants"].get(s["key"])
+                if v:
+                    v["count"] -= s["count"]
+                    if v["count"] <= 0:
+                        del t["variants"][s["key"]]
+                if t["count"] <= 0:
+                    del self._totals[s["id"]]
                 continue
             t = self._totals.setdefault(s["id"], {"id": s["id"], "count": 0, "score": 1.0, "variants": {}})
             t["count"] += s["count"]
@@ -600,7 +601,68 @@ class Scanner:
             v["count"] += s["count"]
             v["score"] = min(v["score"], round(s["score"], 3))
             self._variant_crops.setdefault((s["id"], s["key"]), s["crop"])
+
+    def _add_vault_page(self, page):
+        """Add a page, counting only rows not seen before. The rows read so far are kept in order, in
+        runs (per category): a page that lines up with a run extends it (scrolling a little, back up, or
+        the same page again counts nothing twice); one that lines up with nothing starts a new run (the
+        stash opened in the middle, or a jump), and two runs that come to overlap are joined, taking
+        back the rows counted in both."""
+        rows = self._rows(page["slots"])
+        page_rows = [{"feats": [s["feat"] for s in r],
+                      "slots": [{k: s[k] for k in ("id", "count", "key", "unknown", "score", "guess") if k in s} for s in r]}
+                     for r in rows]
+        feats = [r["feats"] for r in page_rows]
+        runs = self._seq.setdefault(self._cat, [])
+        best = None                                               # (overlap, run index, offset)
+        for n, run in enumerate(runs):
+            a = self._align(feats, run)
+            if a and (best is None or a[0] > best[0]):
+                best = (a[0], n, a[1])
+        if best is None:
+            if runs:
+                self._gaps += 1
+            if runs and not self._auto:
+                runs[-1].extend(page_rows)                        # F9, a screen at a time: the next rows
+                n, new_idx = len(runs) - 1, list(range(len(rows)))
+            else:
+                runs.append(page_rows)
+                n, new_idx = len(runs) - 1, list(range(len(rows)))
+        else:
+            _, n, o = best
+            run = runs[n]
+            new_idx = [i for i in range(len(rows)) if not 0 <= o + i < len(run)]
+            if not new_idx:                                       # the same rows again
+                return False
+            above = [page_rows[i] for i in new_idx if o + i < 0]
+            below = [page_rows[i] for i in new_idx if o + i >= len(run)]
+            run[:0] = above
+            run.extend(below)
+        self._gap_now = False
+        self._pages.append(len(rows))
+        self._last_rows = feats
+        self._count([dict(s, crop=c["crop"]) for i in new_idx for s, c in zip(page_rows[i]["slots"], rows[i])])
         self._unknown += page["unknown"]
+        # runs that now overlap: join them and take back the rows counted twice
+        if self._auto:
+            joined = True
+            while joined and len(runs) > 1:
+                joined = False
+                for a in range(len(runs)):
+                    for b in range(len(runs)):
+                        if a == b:
+                            continue
+                        k = self._overlap(runs[a], runs[b], self._same_row)
+                        # one shared row could be chance (two rows of the same full stacks): need two,
+                        # unless a whole run is inside the other
+                        if k >= 2 or (k and k == min(len(runs[a]), len(runs[b]))):
+                            self._count([s for r in runs[b][:k] for s in r["slots"]], -1)
+                            runs[a] = runs[a] + runs[b][k:]
+                            del runs[b]
+                            joined = True
+                            break
+                    if joined:
+                        break
         return True
 
     def reassign(self, from_id, key, to_id):
@@ -620,6 +682,12 @@ class Scanner:
             if u is None:
                 return None
             crop, count = self._unknown_crops.pop(key), u["count"]
+        for runs in self._seq.values():                      # the stored rows follow the move
+            for run in runs:
+                for r in run:
+                    for s in r["slots"]:
+                        if s["key"] == key and (s.get("id") == from_id if from_id else s.get("unknown")):
+                            s["id"], s["unknown"] = to_id, False
         self._add_ref(to_id, crop)
         self._cache_vecs, self._cache_vals = [], []          # cached answers may be the old, wrong ones
         if self.learned_dir:
