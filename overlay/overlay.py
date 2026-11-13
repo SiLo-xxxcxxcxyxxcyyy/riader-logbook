@@ -47,6 +47,50 @@ faulthandler.enable(_crash)
 sys.excepthook = lambda t, v, tb: logging.critical("uncaught error", exc_info=(t, v, tb))
 threading.excepthook = lambda a: logging.critical("uncaught error in thread %s", a.thread, exc_info=(a.exc_type, a.exc_value, a.exc_traceback))
 
+def _single_instance():
+    """Two running copies both react to F9 and the one you look at may be an old version (it can be
+    hidden with F8). On start, offer to close the copy that is already running."""
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    k32, u32 = ctypes.windll.kernel32, ctypes.windll.user32
+    pid_file = os.path.join(DATA_DIR, "app.pid")
+    try:
+        old = int(open(pid_file).read().strip())
+    except (OSError, ValueError):
+        old = 0
+    if old and old != os.getpid():
+        h = k32.OpenProcess(0x1000 | 0x0001 | 0x00100000, False, old)   # query info, terminate, synchronize
+        if h:
+            try:
+                buf, n, code = ctypes.create_unicode_buffer(1024), wintypes.DWORD(1024), wintypes.DWORD()
+                exe = os.path.basename(buf.value).lower() if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)) else ""
+                alive = k32.GetExitCodeProcess(h, ctypes.byref(code)) and code.value == 259     # STILL_ACTIVE
+                if alive and (exe.startswith("python") or exe.startswith("raiderlogbook")):
+                    ans = u32.MessageBoxW(None, "Raider Logbook is already running (its window may be hidden: "
+                                          "press F8).\n\nClose it and start this one?", "Raider Logbook", 0x4 | 0x20 | 0x40000)
+                    if ans != 6:                                    # IDYES
+                        logging.info("another copy is running (pid %s); this one exits", old)
+                        sys.exit(0)
+                    k32.TerminateProcess(h, 0)
+                    k32.WaitForSingleObject(h, 5000)
+                    logging.info("closed the copy that was already running (pid %s)", old)
+            finally:
+                k32.CloseHandle(h)
+    try:
+        open(pid_file, "w").write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+try:
+    _single_instance()
+except SystemExit:
+    raise
+except Exception:
+    logging.exception("single-instance check failed")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import updater  # noqa: E402
 
