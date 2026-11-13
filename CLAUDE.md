@@ -42,7 +42,7 @@ Czech; reply in Czech. UI text stays English.
 - Badges in a slot's top-right corner (eye = marked, diamond = quest item) are blanked before matching.
 - Every recognised item keeps its look-alike groups ("variants"); "Wrong?" in the Scan tab calls
   `reassign(from_id, key, to_id)`, which fixes the scan and saves the picture to `learned\` (weapons
-  with attachments look like other weapons). Augment pages: not checked yet, no screenshot of one.
+  with attachments look like other weapons). Short categories (3 augments): the stash grid is chosen as the cluster with the most clearly filled slots, not the biggest one (the empty backpack grid is bigger).
 - While a scan runs, `Api._state` calls `window.onScanState(stage)` → orange "Scanning…" bar on top.
 - ~377 items (mostly newer ones) have no icon in RaidTheory's set (refs.npz), so they come back as
   "Not recognised". MetaForge preview icons were tried as extra references and match the in-game slots

@@ -119,7 +119,7 @@ class Scanner:
         for r in keep:                                   # non-maximum suppression
             if all(_iou(r, o) < 0.4 for o in out):
                 out.append(r)
-        return _snap_to_grid(_largest_group(out))
+        return _snap_to_grid(_largest_group(out, img))
 
     def _add_ref(self, item_id, slot_bgr):
         self.ref_ids.append(item_id)
@@ -455,9 +455,10 @@ def _ocr_engine(text_score=None):
         return run
 
 
-def _largest_group(rects):
-    """Keep the biggest cluster of touching slots (the stash grid), dropping loadout/backpack
-    slots and reward icons elsewhere on the screen."""
+def _largest_group(rects, img=None):
+    """Keep the cluster of touching slots that is the stash grid, dropping loadout/backpack slots and
+    reward icons elsewhere on the screen. The stash is the cluster with the most filled slots: with a
+    short category (3 augments) the empty backpack grid next to it has more slots in total."""
     if len(rects) < 2:
         return rects
     size = float(np.median([w for _, _, w, _ in rects]))
@@ -477,7 +478,16 @@ def _largest_group(rects):
     groups = {}
     for i in range(len(rects)):
         groups.setdefault(find(i), []).append(rects[i])
-    return max(groups.values(), key=len)
+    if img is None:
+        return max(groups.values(), key=len)
+
+    def filled(g):   # clearly holds an item (empty quick-use slots show a faint ring, std ~13; items ~50)
+        n = 0
+        for x, y, w, h in g:
+            inner = img[y + h * 15 // 100:y + h * 85 // 100, x + w * 15 // 100:x + w * 85 // 100]
+            n += inner.size > 0 and float(inner.std()) > 25
+        return n
+    return max(groups.values(), key=lambda g: (filled(g), len(g)))
 
 
 def _snap_to_grid(rects):
