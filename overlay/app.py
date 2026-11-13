@@ -40,6 +40,7 @@ import webview
 from pynput import keyboard
 
 from scanner import Scanner
+import marks                                               # noqa: E402
 import capture                                             # noqa: E402
 capture.enable_dpi_awareness()
 
@@ -67,6 +68,8 @@ class Api:
         self._mon = None                                    # monitor rectangle, set in main()
         self._map_url = None
         self._excluded = set()                              # our windows Windows keeps out of screenshots
+        self._values = {}                                   # item id -> value in creds (sent by the page)
+        self._marks = None                                  # in-game marks layer (marks.Marks)
         self._watcher: Watcher | None = None
 
     def _scn(self) -> Scanner:
@@ -175,6 +178,19 @@ class Api:
             logging.info("auto read: %s", "on" if on else "off")
         return bool(self._watcher and self._watcher.on)
 
+    def set_item_values(self, values):
+        """The page sends each item's value, shown under the slots in the game."""
+        if isinstance(values, dict):
+            self._values = {str(k): float(v) for k, v in values.items() if isinstance(v, (int, float))}
+        return len(self._values)
+
+    def set_marks(self, on):
+        if self._marks:
+            self._marks.enabled = bool(on)
+            if not on:
+                self._marks.clear()
+        return bool(self._marks and self._marks.enabled)
+
     def auto_status(self):
         w = self._watcher
         return {"on": bool(w and w.on), "state": w.state if w else "off", "excluded": sorted(self._excluded)}
@@ -277,6 +293,25 @@ class Watcher(threading.Thread):
         self.prev, self.since, self.done = {}, {}, {}
         self.last_stash, self.last_scan = 0.0, 0.0
 
+    def _show_marks(self, f, frame):
+        m = self.api._marks
+        if not m or not frame:
+            return
+        vals = self.api._values
+        slots = []
+        for x, y, w, h, iid, n in frame:
+            v = vals.get(iid, 0) * n if iid else 0
+            slots.append({"box": (x, y, w, h), "ok": iid is not None,
+                          "label": marks.short_value(v) if v else None})
+        ox, oy = self.stream.origin
+        m.show((int(ox), int(oy), f.shape[1], f.shape[0]), slots)
+        self.marked = True
+
+    def _clear_marks(self):
+        if getattr(self, "marked", False) and self.api._marks:
+            self.api._marks.clear()
+            self.marked = False
+
     def _sigs(self, f):
         h, w = f.shape[:2]
         k = h / 1080
@@ -315,6 +350,7 @@ class Watcher(threading.Thread):
             return
         if f is None:
             self.state = why
+            self._clear_marks()
             time.sleep(1.0)
             return
         self.state = "watching"
@@ -327,6 +363,8 @@ class Watcher(threading.Thread):
             self.prev[name] = s
             if p is None or float(np.abs(s - p).mean()) > 2.0:      # still moving
                 self.since[name] = now
+                if name == "stash":
+                    self._clear_marks()                             # the slots moved: old marks are wrong
                 continue
             if now - self.since.get(name, now) < 0.3:
                 continue
@@ -347,9 +385,14 @@ class Watcher(threading.Thread):
                 scn.reset_vault_session()
                 res = scn.scan(f, auto=True)
         if not res:
+            self._clear_marks()
             return
+        frame = res.pop("frame", None)
         if res.get("kind") == "vault":
             self.last_stash = time.time()
+            self._show_marks(f, frame)
+        else:
+            self._clear_marks()
         res["auto"] = True
         logging.info("auto read (%.1fs): %s", time.time() - t0,
                      {k: (v if k not in ("items", "quests", "unknowns", "categories") else len(v))
@@ -458,6 +501,10 @@ def main(launch=None):
 
     def on_start():
         start_hotkeys(api)
+        try:
+            api._marks = marks.Marks()
+        except Exception:
+            logging.exception("in-game marks unavailable")
         api._watcher = Watcher(api)
         api._watcher.start()
         if not a.no_update:

@@ -901,13 +901,16 @@ window.onAutoScan=r=>{
 function autoPanel(){
   return `<div class="panel stack desk-only"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Automatic reading</h2>
     <label class="row"><input type="checkbox" id="optAuto" ${S.auto?"checked":""}> On</label></div>
+    <label class="row"><input type="checkbox" id="optMarks" ${S.marks?"checked":""}> Mark what was read in the game: a green tick and the value on every slot recognised, a red <b>?</b> on one that wasn't</label>
     <p class="mut" style="margin:0;font-size:13px">While the game is the window in front, the app reads it by itself: scroll through your stash (category <b>All</b>) and the vault updates when every slot is read; open a quest at its trader and it's added with its steps. Nothing to press. F9 still works.</p>
     <p class="mono mut" style="margin:0;font-size:12px" id="autoState">${S.auto?"…":"Off"}</p></div>`;
 }
 function refreshAutoState(){const el=$("#autoState");if(!el||!api()||!api().auto_status)return;
   api().auto_status().then(s=>{const e=$("#autoState");if(e)e.textContent=(AUTO_STATE[s.state]||s.state)+(s.excluded&&s.excluded.length?" · the overlay stays out of the screenshots":"")})}
 setInterval(refreshAutoState,2000);
-window.addEventListener("pywebviewready",()=>{api()&&api().set_auto&&api().set_auto(S.auto)});
+S.marks=S.marks??true;
+window.addEventListener("pywebviewready",()=>{const a=api();if(!a)return;a.set_auto&&a.set_auto(S.auto);a.set_marks&&a.set_marks(S.marks);
+  a.set_item_values&&a.set_item_values(Object.fromEntries(Object.entries(D.items).filter(([,i])=>i.v).map(([k,i])=>[k,i.v])))});
 // Active quests you've confirmed by scanning are never marked done, nor anything after them.
 // That matters for quests with several possible previous quests.
 function questScanTarget(replace){
@@ -1025,6 +1028,7 @@ document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   else if(d.given){const [pid,it]=d.given.split("|"),p=D.projects[pid],n=p.ph[S.proj[pid]||0]?.req[it]||0;
     (S.projGiven[pid]=S.projGiven[pid]||{})[it]=Math.max(0,Math.min(n,Math.round(+t.value||0)));render()}
   else if(t.id==="optFuture"){S.future=t.checked;render()}
+  else if(t.id==="optMarks"){S.marks=t.checked;api()&&api().set_marks&&api().set_marks(S.marks);save()}
   else if(t.id==="optAuto"){S.auto=t.checked;api()&&api().set_auto&&api().set_auto(S.auto);render()}
   else if(t.id==="pinQ"){S.pinQ=t.value;save()}
   else if(t.id==="routeT"){S.routeT=t.value;render()}

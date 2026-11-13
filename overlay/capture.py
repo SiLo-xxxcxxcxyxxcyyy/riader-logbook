@@ -217,6 +217,7 @@ class Stream:
         self.fps, self.cam, self.key = fps, None, None
         self._game, self._game_at = None, 0.0
         self.require_front = True
+        self.origin = (0, 0)
 
     def _find(self):
         if time.time() - self._game_at > 2.0:
@@ -242,6 +243,7 @@ class Stream:
         region = {"left": l, "top": t, "width": r - l, "height": b - t}
         dev, idx, m = _dxgi_output_for(region)
         x0, y0 = region["left"] - m["left"], region["top"] - m["top"]
+        self.origin = (m["left"] + max(0, x0), m["top"] + max(0, y0))      # screen position of the frame
         box = (max(0, x0), max(0, y0), min(m["width"], x0 + region["width"]), min(m["height"], y0 + region["height"]))
         key = (dev, idx, box)
         if key != self.key:

@@ -713,7 +713,9 @@ class Scanner:
                 if head:
                     c["used"], c["cap"] = head["used"], head["cap"]
             added = self._add_vault_page(page)
-            return {**self._vault_result(), "duplicate": not added}
+            # what this picture holds, slot by slot (for the in-game marks)
+            frame = [[*map(int, s["box"]), None if s.get("unknown") else s["id"], int(s["count"])] for s in page["slots"]]
+            return {**self._vault_result(), "duplicate": not added, "frame": frame}
         if auto:
             return None
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
