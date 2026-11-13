@@ -186,10 +186,20 @@ def update_data(api: Api):
         import build
         page = build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR,
                          assets=False, log=log)
-        # a new query string: WebView2 ignores setting the address it already shows, so the rebuilt page
-        # would not load (same file:// origin, so localStorage is unaffected)
-        api._window.load_url(pathlib.Path(page).resolve().as_uri() + f"?v={int(time.time())}")
-        time.sleep(1.5)
+        # reload from inside the page: WebView2 ignores setting the address it already shows, and a
+        # cache-busting ?v= on a file:// address is escaped into the file name by .NET's Uri
+        # ("File not found")
+        try:
+            api._window.evaluate_js("location.reload()")
+        except Exception:                          # the page navigates away while answering
+            pass
+        for _ in range(40):                        # wait until the reloaded page has its scripts (5 MB page)
+            time.sleep(0.25)
+            try:
+                if api._window.evaluate_js("typeof window.toast === 'function'"):
+                    break
+            except Exception:
+                pass
         msg = {"updated": f"App updated to version {up.get('version')} and data refreshed",
                "new_exe_needed": "A new version needs a fresh download from GitHub (see Help)",
                "unreachable": "Data updated (couldn't check for app updates)",
