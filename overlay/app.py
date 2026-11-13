@@ -324,6 +324,8 @@ class Watcher(threading.Thread):
             k = f.shape[0] / 1080
             if res.get("gap"):
                 status = ("Rows were skipped: scroll back up a bit", "warn")
+            elif (res.get("runs") or 1) > 1 and st.get("used") and st.get("slots", 0) >= st["used"]:
+                status = ("Pieces don't join yet: scroll through once more", "warn")
             elif st.get("used") and st.get("slots", 0) >= st["used"]:
                 status = (f"All {st['used']} read" if st.get("slots") == st["used"] else
                           f"Read {st['slots']} of {st['used']}: check it in the app", "ok" if st.get("slots") == st["used"] else "warn")
@@ -337,6 +339,19 @@ class Watcher(threading.Thread):
         ox, oy = self.stream.origin
         m.show((int(ox), int(oy), f.shape[1], f.shape[0]), slots, status)
         self.marked = True
+
+    @staticmethod
+    def _keep_frame(f, res, keep=80):
+        try:
+            os.makedirs(SCAN_DIR, exist_ok=True)
+            st = res.get("stash") or {}
+            name = time.strftime("auto-%Y%m%d-%H%M%S") + f"-{st.get('slots', 0)}of{st.get('used', 0)}.jpg"
+            cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tofile(os.path.join(SCAN_DIR, name))
+            old = sorted(x for x in os.listdir(SCAN_DIR) if x.startswith("auto-"))
+            for x in old[:-keep]:
+                os.remove(os.path.join(SCAN_DIR, x))
+        except Exception:
+            logging.exception("could not keep the auto-read frame")
 
     def _clear_marks(self):
         if getattr(self, "marked", False) and self.api._marks:
@@ -426,6 +441,8 @@ class Watcher(threading.Thread):
         if res.get("kind") == "vault":
             self.last_stash = time.time()
             self._show_marks(f, frame, res)
+            if not res.get("duplicate"):                          # keep what was read, to check a wrong count later
+                threading.Thread(target=self._keep_frame, args=(f, res), daemon=True).start()
         else:
             self._clear_marks()
         res["auto"] = True

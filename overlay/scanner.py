@@ -36,7 +36,7 @@ DINO_MARGIN = 0.02            # ...and the lead over the best other item
 LEARNED_MIN = 0.9            # taught pictures only count above this similarity
 DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 NEAR_OK = 0.85                # pixel match this good on the grid box: skip the wider shift search
-CACHE_SAME = 0.995            # whole-slot picture similarity at which an earlier reading is reused
+CACHE_SAME = 0.99             # similarity (whole slot and count corner, each) at which an earlier reading is reused
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -380,15 +380,26 @@ class Scanner:
     # ---------- slot cache: a slot whose picture (count included) was already read ----------
     @staticmethod
     def _cache_vec(crop):
-        g = cv2.cvtColor(cv2.resize(crop, (32, 32), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
-        g -= g.mean()
-        n = float(np.linalg.norm(g))
-        return g / n if n > 1e-6 else g
+        """The whole slot in colour (small), plus its count corner at full detail: a stack of the same
+        item with another count, or a coupler of another colour, must not pass for this one."""
+        def unit(a):
+            a = a.astype(np.float32).ravel()
+            a -= a.mean()
+            n = float(np.linalg.norm(a))
+            return a / n if n > 1e-6 else a
+        h, w = crop.shape[:2]
+        whole = unit(cv2.resize(crop, (24, 24), interpolation=cv2.INTER_AREA))
+        corner = crop[int(h * 0.70):, int(w * 0.45):]
+        corner = unit(cv2.resize(cv2.cvtColor(corner, cv2.COLOR_BGR2GRAY), (40, 22), interpolation=cv2.INTER_AREA))
+        return np.concatenate([whole, corner]) / np.sqrt(2.0)
 
     def _cache_get(self, v):
         if not self._cache_vecs:
             return None
-        s = np.stack(self._cache_vecs) @ v
+        m = np.stack(self._cache_vecs)
+        n = 24 * 24 * 3
+        whole, corner = m[:, :n] @ v[:n] * 2.0, m[:, n:] @ v[n:] * 2.0      # each part's own similarity
+        s = np.minimum(whole, corner)
         j = int(np.argmax(s))
         return dict(self._cache_vals[j]) if s[j] > CACHE_SAME else None
 
@@ -653,9 +664,7 @@ class Scanner:
                         if a == b:
                             continue
                         k = self._overlap(runs[a], runs[b], self._same_row)
-                        # one shared row could be chance (two rows of the same full stacks): need two,
-                        # unless a whole run is inside the other
-                        if k >= 2 or (k and k == min(len(runs[a]), len(runs[b]))):
+                        if k:
                             self._count([s for r in runs[b][:k] for s in r["slots"]], -1)
                             runs[a] = runs[a] + runs[b][k:]
                             del runs[b]
@@ -711,6 +720,7 @@ class Scanner:
                 "categories": cats,
                 # the all-items view plus a category in one session counts that category twice
                 "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "gap": self._gap_now,
+                "runs": len(self._seq.get(self._cat, [])),
                 "value": self._value}
 
     # ---------- quests ----------

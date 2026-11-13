@@ -894,6 +894,7 @@ function autoScan(r){
     if(!st||st.used==null){autoBar(`Reading the stash: ${r.slots} slots`);save();return}
     if(st.cat!==0){autoBar(`Reading a stash category: ${st.slots}/${st.used}. Pick “All” to update your vault.`);save();return}
     if(st.slots<st.used){autoBar(`Reading the stash: ${st.slots}/${st.used} slots. Keep scrolling down.`);save();return}
+    if((r.runs||1)>1){autoBar(`Read ${st.slots}/${st.used} slots in ${r.runs} pieces that don't join yet. Scroll through the stash once more, top to bottom.`);save();return}
     if(st.slots>st.used||r.mixed){S.scan=r;autoBar(`Read ${st.slots} slots but the stash has ${st.used}. Check it on the Scan tab.`);render();return}
     if((r.unknowns||[]).length){S.scan=r;S.tab="scan";render();toast(`Stash read. ${plural(r.unknowns.length,"item")} need a name before the vault is updated.`);return}
     S.inv={};r.items.forEach(x=>{if(x.count>0)S.inv[x.id]=x.count});
