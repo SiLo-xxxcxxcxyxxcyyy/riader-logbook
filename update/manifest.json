@@ -1,5 +1,5 @@
 {
- "version": 29,
+ "version": 30,
  "min_app": 1,
  "latest_app": 3,
  "download": "https://github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook/actions/workflows/build-windows.yml",

@@ -68,6 +68,7 @@ class Scanner:
         # icons you taught the app (items missing from the icon set, e.g. new ones): <item_id>__<key>.png
         self.learned_dir = learned_dir
         taught = []
+        self._taught_tpl = []                      # (item id, icon picture) of every taught slot
         if learned_dir and os.path.isdir(learned_dir):
             for fn in sorted(os.listdir(learned_dir)):
                 if fn.endswith(".png") and "__" in fn:
@@ -75,6 +76,7 @@ class Scanner:
                     if im is not None:
                         self._add_ref(fn.split("__")[0], im, embed=False)
                         taught.append((fn.split("__")[0], im))
+                        self._taught_tpl.append((fn.split("__")[0], self._tpl(im)))
         if self._dino and taught:
             self._dino_add([t for t, _ in taught], [im for _, im in taught])
         # tier numerals (I-IV) drawn bottom-right on weapons and mods; all tiers share one icon
@@ -177,6 +179,30 @@ class Scanner:
             if all(_iou(r, o) < 0.4 for o in out):
                 out.append(r)
         return _snap_to_grid(_largest_group(out, img))
+
+    @staticmethod
+    def _tpl(slot_bgr):
+        """The icon part of a slot at 96 px, for exact template comparison."""
+        return cv2.resize(slot_bgr, (96, 96), interpolation=cv2.INTER_AREA)[8:64, 10:86].copy()
+
+    def _taught_rerank(self, crop, iid):
+        """Items you taught that look almost the same (Amplification Module Mk. III vs Mk. IV): compare
+        the icon pixel by pixel, in colour, with a small shift search, against each taught picture of
+        the read item and of its look-alikes, and take the clearly closer one."""
+        if not self._taught_tpl:
+            return iid
+        s = cv2.resize(crop, (96, 96), interpolation=cv2.INTER_AREA)
+        scores = {}
+        for tid, tpl in self._taught_tpl:
+            v = float(cv2.matchTemplate(s, tpl, cv2.TM_CCOEFF_NORMED).max())
+            scores[tid] = max(scores.get(tid, -1.0), v)
+        mine = scores.get(iid)
+        if mine is None or mine < 0.7:
+            return iid                                   # not one of the taught look-alikes
+        best = max(scores, key=scores.get)
+        if best != iid and scores[best] >= 0.8 and scores[best] - mine >= 0.03:
+            return best
+        return iid
 
     def _add_ref(self, item_id, slot_bgr, embed=True):
         self.ref_ids.append(item_id)
@@ -363,7 +389,7 @@ class Scanner:
                 guess = self._guesses(embs[n], c) if embs is not None else []
                 found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score, "guess": guess})
                 continue
-            tiered = self._with_tier(c, iid)
+            tiered = self._with_tier(c, self._taught_rerank(c, iid))
             # near-identical icons: flag for review, unless they are tiers of one weapon and the numeral was read
             tier_read = self.family(iid)[1] is not None and self.read_tier(c) is not None
             if alt != iid and score - alt_score < 0.02 and not (tier_read and self.family(alt)[0] == self.family(iid)[0]):
@@ -779,6 +805,7 @@ class Scanner:
                         if s["key"] == key and (s.get("id") == from_id if from_id else s.get("unknown")):
                             s["id"], s["unknown"] = to_id, False
         self._add_ref(to_id, crop)
+        self._taught_tpl.append((to_id, self._tpl(crop)))
         self._cache_vecs, self._cache_vals = [], []          # cached answers may be the old, wrong ones
         if self.learned_dir:
             os.makedirs(self.learned_dir, exist_ok=True)
