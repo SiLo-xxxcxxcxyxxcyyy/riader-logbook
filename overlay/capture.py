@@ -97,18 +97,40 @@ def enable_dpi_awareness():
 _LAST = {"hash": None}
 
 
+_CAMS = {}
+
+
+def _dxgi_output_for(region):
+    """(device_idx, output_idx, monitor rect) of the DXGI output that holds the region's centre.
+    DXGI numbers outputs differently from mss/EnumDisplayMonitors (on a laptop with an external
+    primary monitor mss says [laptop, primary] while DXGI says [primary, laptop]), so match by the
+    output's own desktop coordinates instead of by index."""
+    import dxcam
+    factory = getattr(dxcam, "__factory")
+    cx, cy = region["left"] + region["width"] // 2, region["top"] + region["height"] // 2
+    first = None
+    for d, outs in enumerate(factory.outputs):
+        for i, o in enumerate(outs):
+            o.update_desc()
+            c = o.desc.DesktopCoordinates
+            m = {"left": c.left, "top": c.top, "width": c.right - c.left, "height": c.bottom - c.top}
+            first = first or (d, i, m)
+            if c.left <= cx < c.right and c.top <= cy < c.bottom:
+                return d, i, m
+    if first is None:
+        raise RuntimeError("no DXGI output found")
+    return first
+
+
 def _dxgi_grab(region):
     """Capture through DXGI Desktop Duplication (what recording tools use). Unlike GDI it sees the
     current frame of fullscreen/borderless games instead of an old, frozen one."""
     import dxcam
-    import mss as _mss
-    with _mss.mss() as sct:                      # find the monitor that holds the region
-        cx, cy = region["left"] + region["width"] // 2, region["top"] + region["height"] // 2
-        mons = sct.monitors[1:]
-        idx = next((i for i, m in enumerate(mons) if m["left"] <= cx < m["left"] + m["width"]
-                    and m["top"] <= cy < m["top"] + m["height"]), 0)
-        m = mons[idx]
-    cam = dxcam.create(output_idx=idx, output_color="BGR")     # dxcam keeps one camera per output; reuse it
+    dev, idx, m = _dxgi_output_for(region)
+    key = (dev, idx)
+    cam = _CAMS.get(key)
+    if cam is None or getattr(cam, "is_released", False):
+        cam = _CAMS[key] = dxcam.create(device_idx=dev, output_idx=idx, output_color="BGR")
     l, t = region["left"] - m["left"], region["top"] - m["top"]
     box = (max(0, l), max(0, t), min(m["width"], l + region["width"]), min(m["height"], t + region["height"]))
     out = {}

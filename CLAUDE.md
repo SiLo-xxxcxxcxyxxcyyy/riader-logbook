@@ -26,16 +26,14 @@ Czech; reply in Czech. UI text stays English.
 - User data, logs and scans: `%APPDATA%\RaiderLogbook\` → `app.log`, `crash.log`, `scans\scan-*.png`
   (every scan is saved), `learned\` (icons the user taught), `page\index.html`, `cache\`.
 
-## Open problem (start here)
-Vault scanning on the user's PC fails: scans come out identical to the previous one, and the last one
-found "1 item slot (40px), 110 text lines" while the stash was open (real slots are ~97px at 1920x1080).
-Earlier, 15 scans of different stash pages were all the same image (GDI returned a frozen frame).
-DXGI capture via dxcam was added but not verified on the user's machine. Steps:
-1. Read `%APPDATA%\RaiderLogbook\app.log` / `crash.log` and the newest `scans\*.png`.
-2. Check whether `dxcam` is installed in `.venv` and whether capture info says `method: dxgi` or a DXGI error.
-3. Run `python overlay/scanner.py <scan.png>` on the saved scans; fix capture.py/scanner.py; run
-   `tests/test_real.py`.
-Also unexplained: the app crashed once while pressing F9 repeatedly in the stash (crash logging now exists).
+## Scanner capture notes
+- The user's PC: laptop (2560x1600 at x=-2560) + primary external monitor (1920x1080 at 0,0), game on
+  the primary. mss lists monitors as [laptop, primary], DXGI/dxcam as [primary, laptop]: never map
+  between them by index. `capture._dxgi_output_for` picks the DXGI output by its DesktopCoordinates.
+  (Before this fix DXGI captured the laptop screen, so every scan was the same desktop picture.)
+- Verified live on 2026-11-13: `method: dxgi`, correct stash frame, scanner finds the vault.
+- Still unexplained: the app crashed once while pressing F9 repeatedly in the stash (see `crash.log`).
+- Debug a scan: `python overlay/scanner.py <scan.png> --debug out.png`; then run `tests/test_real.py`.
 
 ## Conventions
 Commit with "Raider Logbook <noreply@anthropic.com>" as author; push to `main` of
