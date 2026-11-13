@@ -82,5 +82,6 @@ After `python build.py ...`, open `dist/index.html`. Progress is stored in the b
 | [MetaForge](https://metaforge.app/arc-raiders) map data + events | ~43,000 map markers (containers, nature, caches, quest spots, extracts), event schedule |
 | [Arc Raiders Hub](https://arcraidershub.com/guides) | Build orders (`sources/skill_builds.json`) and guide links (`sources/hub_guides.json`), both kept by hand because the site's terms forbid scraping |
 | [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) (MIT) | Recipes, recycling, ARC drops, trades, projects, map images, scanner icons |
+| [DINOv2-small](https://huggingface.co/Xenova/dinov2-small) (Meta, Apache-2.0) | Scanner image matcher (`overlay/assets/dinov2s_q.onnx`); reference vectors for items without a game icon come from wiki / MetaForge item art (`tools/build_web_refs.py`) |
 
 The RaidTheory repo stopped updating in August 2026, so recipes, recycling and ARC drops for Frozen Trail items (and the new Bully, Skulker and Hydra) are missing until a source publishes them.

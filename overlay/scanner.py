@@ -31,7 +31,9 @@ DETAIL = (12, 44, 12, 42)     # rows/cols of a 64px slot compared at full detail
 CLOSE = 0.03                  # "nearly tie": within this much of the best match
 TIER_RE = re.compile(r"(.+)_(i|ii|iii|iv)")
 NUMERAL = (70, 96, 66, 96)     # rows/cols of a 96px slot searched for the tier numeral
-LEARNED_MIN = 0.9             # taught pictures only count above this similarity
+DINO_MIN = {"base": 0.78, "web": 0.44, "taught": 0.9}   # DINOv2 similarity needed, by picture source
+DINO_MARGIN = 0.02            # ...and the lead over the best other item
+LEARNED_MIN = 0.9            # taught pictures only count above this similarity
 DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
@@ -52,14 +54,27 @@ class Scanner:
         self.ref_feat = np.stack([self._feature(im) for im in refs["imgs"]])
         self.ref_detail = np.stack([self._detail(im) for im in refs["imgs"]])
         self._n_base = len(self.ref_ids)          # refs after this index are pictures you taught
+        # DINOv2 embeddings (overlay/matcher.py): the main matcher when its files are present
+        self._dino = None
+        try:
+            import matcher
+            m = matcher.load(assets)
+            if m:
+                self._dino, self.dino_ids, self.dino_emb, self.dino_kind = m
+        except Exception:                          # missing onnxruntime / model: pixel features only
+            self._dino = None
         # icons you taught the app (items missing from the icon set, e.g. new ones): <item_id>__<key>.png
         self.learned_dir = learned_dir
+        taught = []
         if learned_dir and os.path.isdir(learned_dir):
             for fn in sorted(os.listdir(learned_dir)):
                 if fn.endswith(".png") and "__" in fn:
                     im = cv2.imdecode(np.fromfile(os.path.join(learned_dir, fn), np.uint8), cv2.IMREAD_COLOR)
                     if im is not None:
-                        self._add_ref(fn.split("__")[0], im)
+                        self._add_ref(fn.split("__")[0], im, embed=False)
+                        taught.append((fn.split("__")[0], im))
+        if self._dino and taught:
+            self._dino_add([t for t, _ in taught], [im for _, im in taught])
         # tier numerals (I-IV) drawn bottom-right on weapons and mods; all tiers share one icon
         num = np.load(os.path.join(assets, "numerals.npz")) if os.path.exists(os.path.join(assets, "numerals.npz")) else None
         self._numerals = [(str(l), im.astype(np.float32)) for l, im in zip(num["labels"], num["imgs"])] if num is not None else []
@@ -159,10 +174,38 @@ class Scanner:
                 out.append(r)
         return _snap_to_grid(_largest_group(out, img))
 
-    def _add_ref(self, item_id, slot_bgr):
+    def _add_ref(self, item_id, slot_bgr, embed=True):
         self.ref_ids.append(item_id)
         self.ref_feat = np.vstack([self.ref_feat, self._feature(slot_bgr)[None, :]])
         self.ref_detail = np.vstack([self.ref_detail, self._detail(slot_bgr)[None, :]])
+        if embed and self._dino:
+            self._dino_add([item_id], [slot_bgr])
+
+    @staticmethod
+    def _dino_size(bgr):
+        return cv2.resize(bgr, (96, 96), interpolation=cv2.INTER_AREA)
+
+    def _dino_add(self, ids, imgs):
+        e = self._dino.embed([self._dino_size(i) for i in imgs])
+        self.dino_ids = self.dino_ids + list(ids)
+        self.dino_emb = np.vstack([self.dino_emb, e])
+        self.dino_kind = self.dino_kind + ["taught"] * len(ids)
+
+    def _dino_decide(self, e):
+        """Best item for one slot embedding: (item_id, score, margin) or None when unsure.
+        Thresholds by where the reference picture came from: a game slot render, a slot drawn from
+        internet art (looks less alike, so a lower bar), or a picture you taught (a real slot
+        screenshot, so it must match closely). The best item must also beat the best other item
+        by a margin. Tuned on real 1080p scans (cross-validated: 87/97 right, 2.5 wrong)."""
+        s = self.dino_emb @ e
+        order = np.argsort(-s)[:40]
+        j = int(order[0])
+        f0 = self.family(self.dino_ids[j])[0]
+        j2 = next((int(k) for k in order[1:] if self.family(self.dino_ids[k])[0] != f0), None)
+        margin = float(s[j] - s[j2]) if j2 is not None else 1.0
+        if s[j] < DINO_MIN[self.dino_kind[j]] or margin < DINO_MARGIN:
+            return None
+        return self.dino_ids[j], float(s[j]), margin, {self.family(self.dino_ids[k])[0]: float(s[k]) for k in order[::-1]}
 
     @classmethod
     def _detail(cls, slot_bgr):
@@ -240,22 +283,37 @@ class Scanner:
         slots = self.find_slots(img)
         if len(slots) < 4:
             return None
-        found, unknown = [], 0
+        found, unknown, pending = [], 0, []
         for (x, y, w, h) in slots:
             crop = img[y:y + h, x:x + w]
             if crop.size == 0 or self._is_empty(crop):     # empty slot (just the frame)
                 continue
-            ((iid, score), (alt, alt_score)), (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
-            c = img[y:y + h, x:x + w].copy()
+            old, (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
+            pending.append((old, (x, y, w, h), img[y:y + h, x:x + w].copy()))
+        embs = self._dino.embed([self._dino_size(c) for _, _, c in pending]) if self._dino and pending else None
+        for n, (((iid, score), (alt, alt_score)), (x, y, w, h), c) in enumerate(pending):
             slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1}
-            if score < MATCH_MIN:
+            sure = score >= MATCH_MIN
+            # a near-exact pixel match (a picture you taught, or the same render) is reliable: keep it
+            if embs is not None and score < LEARNED_MIN:
+                d = self._dino_decide(embs[n])
+                sure = d is not None                             # unsure: ask the user rather than guess
+                if d is not None:
+                    did, dscore, margin, fam_best = d
+                    # the pixel matcher is finer between near-twins (weapon tiers, Combat Mk. 3 Aggressive
+                    # vs Flanking): keep its answer when DINOv2 rates it about as high
+                    if not (score >= MATCH_MIN and fam_best.get(self.family(iid)[0], -1) >= dscore - 0.03):
+                        iid = did
+                    alt = iid                                    # DINOv2's margin already covers look-alikes
+                    score = dscore if margin >= 0.05 else min(dscore, 0.7)
+            if not sure:
                 unknown += 1
                 found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score})
                 continue
             tiered = self._with_tier(c, iid)
             # near-identical icons: flag for review, unless they are tiers of one weapon and the numeral was read
             tier_read = self.family(iid)[1] is not None and self.read_tier(c) is not None
-            if score - alt_score < 0.02 and not (tier_read and self.family(alt)[0] == self.family(iid)[0]):
+            if alt != iid and score - alt_score < 0.02 and not (tier_read and self.family(alt)[0] == self.family(iid)[0]):
                 score = min(score, 0.7)
             found.append({**slot, "id": tiered, "score": score})
         if sum(1 for f in found if not f.get("unknown")) < 1 and len(found) < 3:

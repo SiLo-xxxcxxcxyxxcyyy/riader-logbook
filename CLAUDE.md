@@ -57,3 +57,8 @@ github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes
 - Corrections (Save / Wrong?) are logged as `correction: from (key) -> to` in app.log.
 - Taught pictures are real slot screenshots and resemble every slot (~0.7), so they only count above
   `LEARNED_MIN` (0.9). Without this, taught Calculator / Differential Microphone swallowed quick-use items.
+- Main matcher: DINOv2-small (`overlay/matcher.py`, model `assets/dinov2s_q.onnx`, vectors `assets/refs_dino.npz`
+  from `tools/build_web_refs.py`: game slot renders + slots drawn from wiki/MetaForge art). Thresholds by
+  picture source in `DINO_MIN` + `DINO_MARGIN`; a pixel match >= 0.9 or a near-tie keeps the pixel answer
+  (finer for tiers / Aggressive vs Flanking). Embed one picture per run: the quantized model is batch-dependent.
+  First-time accuracy on the user's scans: 88 right / 1 wrong / 9 unsure (pixel matcher alone: 69 / 8 / 22).
