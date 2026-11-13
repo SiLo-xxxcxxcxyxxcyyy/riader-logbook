@@ -31,7 +31,8 @@ DETAIL = (12, 44, 12, 42)     # rows/cols of a 64px slot compared at full detail
 CLOSE = 0.03                  # "nearly tie": within this much of the best match
 TIER_RE = re.compile(r"(.+)_(i|ii|iii|iv)")
 NUMERAL = (70, 96, 66, 96)     # rows/cols of a 96px slot searched for the tier numeral
-DETAIL_MARGIN = 0.05         # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
+LEARNED_MIN = 0.9             # taught pictures only count above this similarity
+DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -50,6 +51,7 @@ class Scanner:
         self.ref_ids = [str(x) for x in refs["ids"]]
         self.ref_feat = np.stack([self._feature(im) for im in refs["imgs"]])
         self.ref_detail = np.stack([self._detail(im) for im in refs["imgs"]])
+        self._n_base = len(self.ref_ids)          # refs after this index are pictures you taught
         # icons you taught the app (items missing from the icon set, e.g. new ones): <item_id>__<key>.png
         self.learned_dir = learned_dir
         if learned_dir and os.path.isdir(learned_dir):
@@ -211,6 +213,11 @@ class Scanner:
                     if x0 < 0 or y0 < 0 or x1 > W or y1 > H:
                         continue
                     sims = self.ref_feat @ self._feature(img[y0:y1, x0:x1])
+                    # a taught picture is a screenshot of a real slot: same frame, background and
+                    # rarity colour as every other slot, so it resembles them all (~0.7). Only a
+                    # near-exact match (the same item again, ~0.95+) counts.
+                    taught = sims[self._n_base:]
+                    taught[taught < LEARNED_MIN] = -1.0
                     if best_sims is None or sims.max() > best_sims.max():
                         best_sims, best_crop = sims, (x0, y0, x1 - x0, y1 - y0)
         order = list(np.argsort(-best_sims))

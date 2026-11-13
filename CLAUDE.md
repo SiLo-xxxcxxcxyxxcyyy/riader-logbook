@@ -55,3 +55,5 @@ github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes
   (`read_tier`, templates in `assets/numerals.npz` cut from a real 1080p stash). Whole weapons lack
   references (Torrente, Canto, Stitcher, Bantam): teach one tier and all tiers follow.
 - Corrections (Save / Wrong?) are logged as `correction: from (key) -> to` in app.log.
+- Taught pictures are real slot screenshots and resemble every slot (~0.7), so they only count above
+  `LEARNED_MIN` (0.9). Without this, taught Calculator / Differential Microphone swallowed quick-use items.
