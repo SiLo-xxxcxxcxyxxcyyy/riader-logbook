@@ -238,6 +238,7 @@ const stockTarget=id=>isBasic(id)?S.stockBasic:S.stockMat;
 // short of it: needed for a quest / upgrade / project, or a crafting material below its stock target
 const short=id=>deficit(id)>0||(uses(id).length>0&&!isGear(I(id))&&have(id)<stockTarget(id));
 
+const TRADE_COST={};for(const t of D.trades){const c=t.c&&t.c.itemId;if(c&&c!=="creds"&&c!=="coins"&&D.items[c])(TRADE_COST[c]=TRADE_COST[c]||[]).push(t)}
 function verdict(id,count){
   const it=I(id),n=needTotal(id),keep=Math.min(count,n),extra=count-keep;
   const base={keep,extra,n};
@@ -245,6 +246,10 @@ function verdict(id,count){
   if(extra<=0)return{...base,k:"keep",label:"Keep",why:count<n?`Keep all, you still need ${n-count} more`:"You need all of them"};
   const pre=keep>0?`Keep ${keep} for ${(NEEDS[id]||[]).map(x=>x.src.replace(/^Quest: /,"")).slice(0,2).join(", ")}, then `:"";
   if(S.use&&S.use[id])return{...base,k:"keep",label:"Keep",why:keep>0?`Keep: needed for ${keep} and you use it`:"You use it in your loadout"};
+  // trade currency (Assorted Seeds and the like): traders take it in exchange for other items
+  const buys=TRADE_COST[id];
+  if(buys){const b=buys.slice().sort((x,y)=>short(y.it)-short(x.it));
+    return{...base,k:"mat",label:"Trade",why:pre+`keep: ${b[0].tr} trades it for ${b.slice(0,3).map(t=>nm(t.it)+(short(t.it)?" (you're short)":"")).join(", ")}${b.length>3?` and ${b.length-3} more`:""}`}}
   if(it.t==="Blueprint")return{...base,k:"learn",label:"Learn",why:pre+"learn the blueprint first, sell duplicates"};
   const used=uses(id);
   if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+(used.length?`keep: ${usesText(id)}`:"use it in a raid or sell it")};
