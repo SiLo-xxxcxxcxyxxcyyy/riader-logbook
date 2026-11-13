@@ -62,3 +62,6 @@ github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes
   picture source in `DINO_MIN` + `DINO_MARGIN`; a pixel match >= 0.9 or a near-tie keeps the pixel answer
   (finer for tiers / Aggressive vs Flanking). Embed one picture per run: the quantized model is batch-dependent.
   First-time accuracy on the user's scans: 88 right / 1 wrong / 9 unsure (pixel matcher alone: 69 / 8 / 22).
+- The window must load the page as a file:// URL. A plain path makes pywebview serve it from
+  http://127.0.0.1:42001: another origin with its own localStorage (vault/quests looked wiped when the data
+  refresh failed to reload the page), and its server locked index.html so the refresh failed.

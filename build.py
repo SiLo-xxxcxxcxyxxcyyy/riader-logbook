@@ -476,7 +476,15 @@ def render(data, mapimg, out_dir, log=print):
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>'
         + out + '</body></html>')
-    os.replace(page + ".tmp", page)
+    for attempt in range(10):                   # Windows: the open window or an antivirus scan can hold the file
+        try:
+            os.replace(page + ".tmp", page)
+            break
+        except PermissionError:
+            if attempt == 9:
+                raise
+            import time
+            time.sleep(0.5)
     log(f"page: {page} ({len(out) // 1024} KB)")
     return page
 

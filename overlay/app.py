@@ -246,8 +246,12 @@ def main(launch=None):
     with mss.mss() as sct:
         mon = sct.monitors[min(a.monitor, len(sct.monitors) - 1)]
     height = min(1000, mon["height"] - 80)
+    # Open the page as file:// - the same address the data refresh reloads it with. Given a plain path,
+    # pywebview serves it from http://127.0.0.1:42001 instead: a different origin with its own
+    # localStorage (your vault and quests seemed gone whenever the refresh didn't reload the page), and
+    # its server keeps index.html open so the refresh couldn't replace it.
     api._window = webview.create_window(
-        "Raider Logbook", UI, js_api=api, width=a.width, height=height,
+        "Raider Logbook", pathlib.Path(UI).resolve().as_uri(), js_api=api, width=a.width, height=height,
         x=mon["left"] + mon["width"] - a.width - 20, y=mon["top"] + 40,
         on_top=True, resizable=True, background_color="#12161B")
     threading.Thread(target=api._scn, daemon=True).start()   # warm up OCR models
