@@ -298,6 +298,11 @@ function openItem(id){
   const natSub=Object.keys(NATURE_ITEM).find(k=>NATURE_ITEM[k]===id);
   if(natSub){const per=Object.entries(MK).map(([m,mk])=>{const si=mk.subs.indexOf("nature:"+natSub);return[m,si<0?0:mk.pts.filter(p=>p[2]===si).length]}).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]);
     if(per.length)where.unshift(`<li>Spawn spots: ${per.map(([m,n])=>`<button class="itemlink" data-showmap="${m}" data-route="nat:${natSub}">${esc(MAPN[m]||m)} ${n}</button>`).join(" · ")} <span class="mut">(open one to see the route)</span></li>`)}
+  if(it.ws){const mapRe=/^(Dam Battlegrounds|Dam|Buried City|The Spaceport|Spaceport|The Blue Gate|Blue Gate|Stella Montis|Riven Tides|Pendola Pass)\b/;
+    where.push(`<li>Known spots <span class="mut" style="font-size:12px">(ARC Raiders Wiki)</span><ul class="plain" style="margin:4px 0 0">${it.ws.map(([d,t])=>`<li style="padding-left:${d*16}px">${d?"› ":""}${esc(t).replace(mapRe,"<b>$1</b>").replace(/ &gt; /g," › ")}</li>`).join("")}</ul></li>`)}
+  if(it.t!=="Blueprint"&&!isGear(it)&&it.t!=="Quest"){const AT=[["dam-battleground","Dam"],["buried-city","Buried City"],["the-spaceport","Spaceport"],["blue-gate","Blue Gate"],["stella-montis","Stella Montis"],["riven-tides","Riven Tides"],["pendola-pass","Pendola Pass"]];
+    const ws=(it.ws||[]).map(x=>x[1]).join(" ");const ord=AT.slice().sort((a,b)=>(ws.includes(b[1])-ws.includes(a[1])));
+    where.push(`<li>Exact spawn spots on the map: ${ord.map(([s,n])=>`<a class="chip map" href="https://arctracker.io/maps/${s}?i=${encodeURIComponent(id)}" target="_blank" rel="noopener">${esc(n)}</a>`).join(" ")} <span class="mut" style="font-size:12px">· opens ARC Tracker in your browser</span></li>`)}
   h+=sec("Where to get it",where.length?`<ul class="plain">${where.join("")}</ul>`:`<p class="mut">The data lists no specific source.</p>`);
   if(it.tip)h+=sec("Farming tips · MetaForge",`<div style="white-space:pre-line">${esc(it.tip)}</div>${it.gu?`<a href="${esc(it.gu)}" target="_blank" rel="noopener" class="mut" style="font-size:13px">Full guide on MetaForge</a>`:""}`);
   if(s.from.length)h+=sec("Get it by recycling or salvaging",`<ul class="plain">${s.from.map(x=>`<li>${thumb(x.id)} ${itemBtn(x.id)} <span class="mono mut">${x.rc?`recycle ${x.rc}×`:""}${x.rc&&x.sv?" · ":""}${x.sv?`salvage ${x.sv}×`:""}</span>${have(x.id)?` <span class="chip map">you have ${have(x.id)}</span>`:""}${I(x.id).f?` <span class="mut">· ${esc(I(x.id).f)}</span>`:""}</li>`).join("")}</ul>`);
@@ -496,7 +501,7 @@ V.needs=()=>{
    ${projPanel()}
    <div class="sum"><div><span class="eyebrow">Item types missing</span><b class="v-recycle">${missing.length}</b></div><div><span class="eyebrow">Needed now</span><b>${missing.filter(r=>r.now).length}</b></div><div><span class="eyebrow">Covered</span><b class="v-sell">${rows.length-missing.length}</b></div></div>
    <div class="panel tbl"><table><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Missing</th><th>For</th><th>Where to look</th></tr></thead><tbody>
-   ${rows.map(r=>{const s=sources(r.id);const hint=[s.zones.join(", "),s.bots.slice(0,2).map(b=>b.n).join(", "),s.vendors.length?"trader":""].filter(Boolean).join(" · ");
+   ${rows.map(r=>{const s=sources(r.id);const spot=(I(r.id).ws||[]).map(x=>x[1]).find(t=>t.includes(" > "));const hint=[spot&&spot.replace(/ > /g," › "),s.zones.join(", "),s.bots.slice(0,2).map(b=>b.n).join(", "),s.vendors.length?"trader":""].filter(Boolean).join(" · ");
    return `<tr class="r-${I(r.id).r||""}"><td>${thumb(r.id)} ${itemBtn(r.id)} ${r.now?'<span class="chip map">now</span>':""}</td><td class="num">${r.n}</td><td class="num">${r.h}</td><td class="num" style="color:${r.d?"var(--warn)":"var(--sell)"}">${r.d||"✓"}</td><td class="mut" style="font-size:13px">${[...new Set(NEEDS[r.id].map(x=>x.src))].slice(0,3).map(esc).join("<br>")}</td><td class="mut" style="font-size:13px">${esc(hint)||"recycling, open the item"}</td></tr>`}).join("")}
    </tbody></table></div></div>`;
 };
@@ -506,7 +511,7 @@ V.items=()=>{
   const list=Object.entries(D.items).filter(([id,i])=>(!tf||i.t===tf)&&(!term||i.n.toLowerCase().includes(term))).sort((a,b)=>a[1].n.localeCompare(b[1].n)).slice(0,200);
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Database · ${Object.keys(D.items).length} items</div><h1>Where to find it</h1>
-   <p class="mut" style="margin:0;max-width:65ch">Open any item to see which zone types it loots in, which ARC drop it and on which maps, who sells it and what you can recycle into it.</p></div>
+   <p class="mut" style="margin:0;max-width:65ch">Open any item to see known spots, which zone types it loots in, which ARC drop it and on which maps, who sells it and what you can recycle into it.</p></div>
    <div class="row"><input id="is" type="search" placeholder="Search items…" value="${esc(S.is||"")}" style="flex:1;min-width:180px">
    <select id="it" aria-label="Item type"><option value="">All types</option>${types.map(t=>`<option value="${esc(t)}" ${tf===t?"selected":""}>${esc(t)}</option>`).join("")}</select></div>
    <div class="panel tbl"><table><thead><tr><th>Item</th><th>Type</th><th>Zones</th><th class="num">Value</th><th class="num">Needed</th></tr></thead><tbody>
@@ -799,7 +804,7 @@ V.help=()=>{
     <li><span class="pill v-mat">Material</span> crafting materials: keep a sensible stock.</li></ul>
     <p class="note">Verdicts follow your quest progress and workshop levels, so keep those up to date. Tick the projects you're working on under <i>Projects</i> on the Shopping list.</p>`)}
   ${sec("quests","Quests",`<p style="margin:0">Each quest shows its objectives, what to hand in (green when you have it), rewards and <b>How to do it</b>: where it's marked on the map, the wiki walkthrough with screenshots, and links to the full guides. Locked quests become available as you finish the ones before them.</p>`)}
-  ${sec("items","Items and the shopping list",`<p style="margin:0">${go("needs","Shopping list")} adds up everything you still need and shows where to look. Open any item for its loot zones, ARC that drop it, traders, trades, what recycles into it, MetaForge farming tips, spawn counts per map for nature items (click a map to see the route) and related guides.</p>`)}
+  ${sec("items","Items and the shopping list",`<p style="margin:0">${go("needs","Shopping list")} adds up everything you still need and shows where to look. Open any item for its loot zones, ARC that drop it, traders, trades, what recycles into it, MetaForge farming tips, known spots from the ARC Raiders Wiki, links to the exact spawn spots on ARC Tracker's map, spawn counts per map for nature items (click a map to see the route) and related guides.</p>`)}
   ${sec("skills","Skills",`<p style="margin:0">Pick a playstyle on ${go("skills","Skills")} and set how many skill points you have. The next five points are listed with what they do. <i>Full order</i> lists every point from 1 to 91: 76 from levelling and up to 15 from expeditions.</p>`)}
   ${sec("desktop","Desktop overlay (Windows)",`<ul class="plain" style="gap:6px">
     <li><span class="kbd">F8</span> show or hide the overlay. <span class="kbd">F9</span> scan the screen (quest log or vault page). <span class="kbd">Shift</span>+<span class="kbd">F9</span> start a new vault scan.</li>

@@ -403,6 +403,47 @@ def assemble(base, F, log=print):
     skills_wt = F.get("wiki_skills.json", lambda: wiki(F, action="parse", page="Skills", prop="wikitext")["parse"]["wikitext"]["*"],
                       max_age=7 * 24 * HOUR)
 
+    # ---- Wiki: where each item is found ("Sources" section: map > area > container), kept as [depth, text]
+    def wiki_items():
+        pages = {}
+        names = sorted({it["n"] for it in items.values()})
+        for i in range(0, len(names), 50):
+            d = wiki(F, action="query", prop="revisions", rvprop="content", rvslots="main", redirects=1,
+                     titles="|".join(names[i:i + 50]))
+            red = {r["to"]: r["from"] for r in d["query"].get("redirects", [])}
+            for p in d["query"]["pages"].values():
+                if "revisions" in p:
+                    w = p["revisions"][0]["slots"]["main"]["*"]
+                    s = "\n".join(x for x in (section(w, n) for n in ("Sources", "Location", "Loot Containers")) if x.strip())
+                    pages[red.get(p["title"], p["title"])] = s
+        return pages
+
+    def spots(s):
+        if "cargo_query" in s or "#" in s[:3]:
+            return None
+        out = []
+        for line in s.splitlines():
+            m = re.match(r"^\s*(\*+|=+)?\s*(.*?)\s*=*\s*$", line)
+            depth = len(m.group(1)) if m.group(1) and m.group(1)[0] == "*" else 0
+            text = wiki_plain(m.group(2)).lstrip("• ").strip()
+            if text and len(text) < 200:
+                out.append([max(0, depth - 1), text])
+        # only "Scavenging" / "Crafting" style one-word lines say nothing the zone doesn't
+        return out if any(len(t.split()) > 1 or ">" in t for _, t in out) else None
+
+    wiki_src = F.get("wiki_items.json", wiki_items, max_age=7 * 24 * HOUR) or {}
+    by_item_name = {}
+    for iid, it in items.items():
+        by_item_name.setdefault(it["n"], iid)
+    n_spots = 0
+    for title, s in wiki_src.items():
+        iid = by_item_name.get(title)
+        sp = spots(s) if iid and s else None
+        if sp:
+            items[iid]["ws"] = sp[:16]
+            n_spots += 1
+    log(f"  wiki item sources: {n_spots}")
+
     MAP_ALIASES = {"dambattlegrounds": "dam_battlegrounds", "spaceport": "the_spaceport", "thespaceport": "the_spaceport",
                    "buriedcity": "buried_city", "thebluegate": "the_blue_gate", "bluegate": "the_blue_gate",
                    "stellamontis": "stella_montis", "pendolapass": "pendola_pass", "riventides": "riven_tides"}
@@ -508,7 +549,7 @@ def assemble(base, F, log=print):
     meta = {"built": dt.datetime.now(dt.timezone.utc).isoformat(timespec="minutes"),
             "sources": [
                 {"n": "MetaForge", "u": "https://metaforge.app/arc-raiders", "what": "items, quests, workshop, farming tips, map markers, event schedule"},
-                {"n": "ARC Raiders Wiki", "u": "https://arcraiders.wiki", "what": "quest chains and walkthroughs, skill list, map images by Cartotect (CC BY-SA 4.0)"},
+                {"n": "ARC Raiders Wiki", "u": "https://arcraiders.wiki", "what": "quest chains and walkthroughs, item locations, skill list, map images by Cartotect (CC BY-SA 4.0)"},
                 {"n": "Arc Raiders Hub", "u": "https://arcraidershub.com/guides", "what": "skill build order (copied by hand) and guide links"},
                 {"n": "RaidTheory arcraiders-data", "u": "https://github.com/RaidTheory/arcraiders-data", "what": "recipes, recycling, ARC drops, trades, projects (MIT)"},
             ]}
