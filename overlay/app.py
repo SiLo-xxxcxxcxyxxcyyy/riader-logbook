@@ -186,7 +186,9 @@ def update_data(api: Api):
         import build
         page = build.run(base_path=BASE_JSON, cache=os.path.join(DATA_DIR, "cache"), out_dir=PAGE_DIR,
                          assets=False, log=log)
-        api._window.load_url(pathlib.Path(page).resolve().as_uri())
+        # a new query string: WebView2 ignores setting the address it already shows, so the rebuilt page
+        # would not load (same file:// origin, so localStorage is unaffected)
+        api._window.load_url(pathlib.Path(page).resolve().as_uri() + f"?v={int(time.time())}")
         time.sleep(1.5)
         msg = {"updated": f"App updated to version {up.get('version')} and data refreshed",
                "new_exe_needed": "A new version needs a fresh download from GitHub (see Help)",
