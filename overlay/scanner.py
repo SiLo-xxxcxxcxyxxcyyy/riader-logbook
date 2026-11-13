@@ -191,6 +191,20 @@ class Scanner:
         self.dino_emb = np.vstack([self.dino_emb, e])
         self.dino_kind = self.dino_kind + ["taught"] * len(ids)
 
+    def _guesses(self, e, crop, k=3):
+        """The k most likely different items for a slot the matcher wasn't sure about, offered as
+        one-click answers (picking from a short list beats typing a name: ARC Conductive / Insulated /
+        Plated Coupler are easy to mix up in a long list)."""
+        s = self.dino_emb @ e
+        out = []
+        for j in np.argsort(-s)[:60]:
+            iid = self._with_tier(crop, self.dino_ids[j])
+            if iid not in out and iid in self.items:
+                out.append(iid)
+            if len(out) == k:
+                break
+        return out
+
     def _dino_decide(self, e):
         """Best item for one slot embedding: (item_id, score, margin) or None when unsure.
         Thresholds by where the reference picture came from: a game slot render, a slot drawn from
@@ -308,7 +322,8 @@ class Scanner:
                     score = dscore if margin >= 0.05 else min(dscore, 0.7)
             if not sure:
                 unknown += 1
-                found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score})
+                guess = self._guesses(embs[n], c) if embs is not None else []
+                found.append({**slot, "id": "?" + slot["key"], "unknown": True, "score": score, "guess": guess})
                 continue
             tiered = self._with_tier(c, iid)
             # near-identical icons: flag for review, unless they are tiers of one weapon and the numeral was read
@@ -438,7 +453,8 @@ class Scanner:
         for s in new:
             if s.get("unknown"):
                 key = s["key"]
-                u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"])})
+                u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"]),
+                                                    "guess": s.get("guess") or []})
                 u["count"] += s["count"]
                 self._unknown_crops.setdefault(key, s["crop"])
                 continue

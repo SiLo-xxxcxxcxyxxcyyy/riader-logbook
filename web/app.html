@@ -372,23 +372,35 @@ V.quests=()=>{
    <input id="qs" type="search" placeholder="Search quest, trader, objective…" value="${esc(S.qs||"")}" style="flex:1;min-width:180px"></div>
    <div class="panel stack">${list.length?list.map(id=>questBlock(id,false)).join(""):`<div class="empty">${S.qf==="mine"&&!term?"No quests in your log yet. Add the quests you have in game in the box above.":"Nothing matches this filter."}</div>`}</div></div>`;
 };
+// the stash categories the game shows (left of the stash), from the item's data type
+const STASH_CATS=["Augments","Shields","Weapons","Ammunition","Weapon mods","Quick use","Keys","Crafting materials","Misc"];
+const WEAPON_T=new Set(["Weapon","Assault Rifle","SMG","Pistol","Shotgun","Battle Rifle","Sniper Rifle","LMG","Hand Cannon","Special"]);
+const MAT_T=new Set(["Recyclable","Topside Material","Refined Material","Basic Material","Nature","Material"]);
+function stashCat(id){const t=I(id).t||"";
+  return t==="Augment"?"Augments":t==="Shield"?"Shields":WEAPON_T.has(t)?"Weapons":t==="Ammunition"?"Ammunition":t==="Modification"?"Weapon mods":t==="Quick Use"?"Quick use":t==="Key"?"Keys":MAT_T.has(t)?"Crafting materials":"Misc"}
 V.vault=()=>{
   const ids=Object.keys(S.inv);
-  const rows=ids.map(id=>({id,c:S.inv[id],v:verdict(id,S.inv[id])}));
-  const cnt={};rows.forEach(r=>cnt[r.v.k]=(cnt[r.v.k]||0)+1);
+  const rows=ids.map(id=>({id,c:S.inv[id],v:verdict(id,S.inv[id]),cat:stashCat(id)}));
+  const vc=S.vcat||"all";
+  const inCat=rows.filter(r=>vc==="all"||r.cat===vc);
+  const cnt={};inCat.forEach(r=>cnt[r.v.k]=(cnt[r.v.k]||0)+1);
+  const ccnt={};rows.forEach(r=>ccnt[r.cat]=(ccnt[r.cat]||0)+1);
   const sellVal=rows.filter(r=>r.v.k==="sell").reduce((a,r)=>a+r.v.extra*(I(r.id).v||0),0);
-  const order={sell:0,recycle:1,learn:2,gear:3,mat:4,keep:5};
-  const shown=rows.filter(r=>S.vf==="all"||r.v.k===S.vf).sort((a,b)=>order[a.v.k]-order[b.v.k]||nm(a.id).localeCompare(nm(b.id)));
-  const F=[["all","All",rows.length],["sell","Sell",cnt.sell],["recycle","Recycle",cnt.recycle],["keep","Keep",cnt.keep],["learn","Blueprints",cnt.learn],["gear","Gear",cnt.gear],["mat","Materials",cnt.mat]];
+  // A to Z like the game's stash, so a scan is easy to check against it
+  const shown=inCat.filter(r=>S.vf==="all"||r.v.k===S.vf).sort((a,b)=>nm(a.id).localeCompare(nm(b.id)));
+  const F=[["all","All",inCat.length],["sell","Sell",cnt.sell],["recycle","Recycle",cnt.recycle],["keep","Keep",cnt.keep],["learn","Blueprints",cnt.learn],["gear","Gear",cnt.gear],["mat","Materials",cnt.mat]];
   return `<div class="stack" style="gap:16px">
    <div class="stack" style="gap:4px"><div class="eyebrow">Vault</div><h1>What to sell, what to keep</h1>
    <p class="mut" style="margin:0;max-width:65ch">Each item shows whether you need it for a quest, a workshop upgrade or a project, or whether you can sell or recycle it.<span class="desk-only"> Press <span class="kbd">F9</span> on a vault page to scan it.</span></p></div>
    <div class="panel row"><label for="addName" class="mut">Add item</label><input id="addName" list="allItems" placeholder="e.g. Rusted Gear" style="flex:1;min-width:180px"><input id="addQty" type="number" min="1" value="1" aria-label="Quantity"><button class="btn pri" id="addBtn">Add</button>
    <datalist id="allItems">${Object.entries(D.items).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([,i])=>`<option value="${esc(i.n)}">`).join("")}</datalist></div>
    ${rows.length?`<div class="sum"><div><span class="eyebrow">Items</span><b>${rows.length}</b></div><div><span class="eyebrow">To sell</span><b class="v-sell">${cnt.sell||0}</b></div><div><span class="eyebrow">To recycle</span><b class="v-recycle">${cnt.recycle||0}</b></div><div><span class="eyebrow">Selling earns</span><b>${fmt(sellVal)}</b></div></div>
-   <div class="filters">${F.map(([k,l,n])=>`<button data-vf="${k}" aria-pressed="${S.vf===k}">${l} ${n||0}</button>`).join("")}</div>
-   <div class="panel tbl"><table><thead><tr><th>Item</th><th class="num">Have</th><th>Verdict</th><th>Why</th><th></th></tr></thead><tbody>
-   ${shown.map(r=>`<tr class="r-${I(r.id).r||""}"><td>${thumb(r.id)} ${itemBtn(r.id)}</td><td class="num"><input type="number" min="0" value="${r.c}" data-qty="${esc(r.id)}" aria-label="Count of ${esc(nm(r.id))}"></td><td><span class="pill v-${r.v.k}">${r.v.label}</span></td><td class="mut" style="font-size:13px">${esc(r.v.why)}</td><td><button class="btn sm" data-del="${esc(r.id)}">Remove</button></td></tr>`).join("")}
+   <div class="stack" style="gap:6px"><span class="eyebrow">Stash category</span>
+   <div class="filters">${[["all","All",rows.length],...STASH_CATS.map(c=>[c,c,ccnt[c]||0])].map(([k,l,n])=>`<button data-vcat="${esc(k)}" aria-pressed="${vc===k}">${l} ${n}</button>`).join("")}</div>
+   <span class="eyebrow">Verdict</span>
+   <div class="filters">${F.map(([k,l,n])=>`<button data-vf="${k}" aria-pressed="${S.vf===k}">${l} ${n||0}</button>`).join("")}</div></div>
+   <div class="panel tbl"><table><thead><tr><th>Item</th><th>Type</th><th class="num">Have</th><th>Verdict</th><th>Why</th><th></th></tr></thead><tbody>
+   ${shown.map(r=>`<tr class="r-${I(r.id).r||""}"><td>${thumb(r.id)} ${itemBtn(r.id)}</td><td class="mut" style="font-size:13px;white-space:nowrap">${r.cat}</td><td class="num"><input type="number" min="0" value="${r.c}" data-qty="${esc(r.id)}" aria-label="Count of ${esc(nm(r.id))}"></td><td><span class="pill v-${r.v.k}">${r.v.label}</span></td><td class="mut" style="font-size:13px">${esc(r.v.why)}</td><td><button class="btn sm" data-del="${esc(r.id)}">Remove</button></td></tr>`).join("")}
    </tbody></table></div>
    <div class="row"><button class="btn" id="clearInv">Clear vault</button></div>`
    :`<div class="empty stack" style="align-items:center">Your vault is empty. Add items above${DESK?", scan a vault page with F9,":""} or load an example vault to see how the verdicts work.<button class="btn pri" id="sampleInv">Load example vault</button></div>`}
@@ -452,15 +464,15 @@ V.scan=()=>{
     const tot=r.items.reduce((a,x)=>a+x.count,0);
     res=`<div class="panel stack"><div class="eyebrow">Last scan · vault ${r.pages>1?`· ${plural(r.pages,"page")}`:""}</div><h2>${plural(r.items.length,"item type")} · ${tot} pieces</h2>
     ${stashProgress(r)}
-    <div class="tbl scanlist"><table><thead><tr><th>Item</th><th class="num">Count</th><th class="num">Match</th></tr></thead><tbody>
-    ${r.items.map((x,i)=>`<tr><td><div class="row" style="gap:6px;flex-wrap:nowrap">${itemBtn(x.id)}${(x.variants||[]).length?`<button class="btn sm" data-fixopen="${i}" aria-expanded="${S.scanFix===x.id}" title="Wrong item? Show what was scanned and correct it">${S.scanFix===x.id?"Close":"Wrong?"}</button>`:""}</div></td><td class="num"><input type="number" min="0" value="${x.count}" data-scancount="${i}" aria-label="Scanned count of ${esc(nm(x.id))}"></td><td class="num conf ${x.score<0.75?"low":""}">${Math.round(x.score*100)}%</td></tr>
-    ${S.scanFix===x.id?`<tr><td colspan="3"><div class="stack" style="gap:8px;padding:4px 0 8px">
+    <div class="tbl scanlist"><table><thead><tr><th>Item</th><th>Type</th><th class="num">Count</th><th class="num">Match</th></tr></thead><tbody>
+    ${r.items.map((x,i)=>`<tr><td><div class="row" style="gap:6px;flex-wrap:nowrap">${itemBtn(x.id)}${(x.variants||[]).length?`<button class="btn sm" data-fixopen="${i}" aria-expanded="${S.scanFix===x.id}" title="Wrong item? Show what was scanned and correct it">${S.scanFix===x.id?"Close":"Wrong?"}</button>`:""}</div></td><td class="mut" style="font-size:13px;white-space:nowrap">${stashCat(x.id)}</td><td class="num"><input type="number" min="0" value="${x.count}" data-scancount="${i}" aria-label="Scanned count of ${esc(nm(x.id))}"></td><td class="num conf ${x.score<0.75?"low":""}">${Math.round(x.score*100)}%</td></tr>
+    ${S.scanFix===x.id?`<tr><td colspan="4"><div class="stack" style="gap:8px;padding:4px 0 8px">
       <p class="mut" style="margin:0;font-size:13px">These slots were read as ${esc(nm(x.id))}. If one isn't, type what it really is: the app moves it and recognises that picture from now on (for example a weapon whose attachment changes its icon).</p>
       <div class="steps-g">${x.variants.map((v,j)=>`<figure style="flex-direction:row;align-items:center;gap:8px"><img src="${v.img}" alt="" style="width:48px;height:48px;flex:none"><div class="stack" style="gap:4px;flex:1;min-width:0"><span class="mono mut" style="font-size:12px">×${v.count} · ${Math.round(v.score*100)}%</span><div class="row" style="gap:4px"><input list="allItemsScan" id="fx_${i}_${j}" placeholder="It's really…" style="flex:1;min-width:0"><button class="btn sm pri" data-fix="${i}_${j}">Save</button></div></div></figure>`).join("")}</div></div></td></tr>`:""}`).join("")}
     </tbody></table></div>
     ${(r.unknowns||[]).length?`<div class="stack" style="gap:8px"><div class="eyebrow">Not recognised (${r.unknowns.length})</div>
       <p class="mut" style="margin:0;font-size:13px">These items aren't in the icon set yet (often new ones). Tell the app what each one is: it adds them to this scan and recognises them from now on.</p>
-      <div class="steps-g">${r.unknowns.map(u=>`<figure style="flex-direction:row;align-items:center;gap:8px"><img src="${u.img}" alt="" style="width:56px;height:56px;flex:none"><div class="stack" style="gap:4px;flex:1;min-width:0"><span class="mono mut" style="font-size:12px">×${u.count}</span><div class="row" style="gap:4px"><input list="allItemsScan" id="lk_${u.key}" placeholder="Item name" style="flex:1;min-width:0"><button class="btn sm pri" data-learn="${u.key}">Save</button></div></div></figure>`).join("")}</div>
+      <div class="steps-g">${r.unknowns.map(u=>`<figure style="flex-direction:row;align-items:center;gap:8px"><img src="${u.img}" alt="" style="width:56px;height:56px;flex:none"><div class="stack" style="gap:4px;flex:1;min-width:0"><span class="mono mut" style="font-size:12px">×${u.count}</span>${(u.guess||[]).length?`<div class="row" style="gap:4px;flex-wrap:wrap"><span class="mut" style="font-size:12px">Is it</span>${u.guess.map(g=>`<button class="btn sm" data-learnas="${esc(u.key)}|${esc(g)}" title="Save this slot as ${esc(nm(g))}">${esc(nm(g))}</button>`).join("")}</div>`:""}<div class="row" style="gap:4px"><input list="allItemsScan" id="lk_${u.key}" placeholder="${(u.guess||[]).length?"Something else…":"Item name"}" style="flex:1;min-width:0"><button class="btn sm pri" data-learn="${u.key}">Save</button></div></div></figure>`).join("")}</div>
 </div>`:""}
     <datalist id="allItemsScan">${Object.entries(D.items).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([,i])=>`<option value="${esc(i.n)}">`).join("")}</datalist>
     <p class="note">Fix any wrong count before applying. Low matches are shown in red.</p>
@@ -826,6 +838,9 @@ document.addEventListener("click",e=>{
   else if(d.showmap){S.lobbyMap=d.showmap;S.routeT=d.route;S.mapMode="tac";S.tab="lobby";$("#dlg").close();render()}
 
   else if(d.vf){S.vf=d.vf;render()}
+  else if(d.vcat){S.vcat=d.vcat;S.vf="all";render()}
+  else if(d.learnas){const [key,id]=d.learnas.split("|");if(!api()){toast("Learning works in the desktop app");return}
+    api().learn(key,id).then(res=>{if(res){S.scan={...S.scan,...res};render();toast(`Saved as ${nm(id)}. It's recognised from now on.`)}})}
   else if(d.del){setQty(d.del,0);render()}
   else if(d.unpin!==undefined){const k=S.lobbyImg||(QMAP_TO_IMG[S.lobbyMap]||[S.lobbyMap])[0];S.pins[k].splice(+d.unpin,1);render()}
   else if(t.id==="addBtn")addItem();
