@@ -66,6 +66,8 @@ class Api:
         self._map_window: webview.Window | None = None
         self._mon = None                                    # monitor rectangle, set in main()
         self._map_url = None
+        self._excluded = set()                              # our windows Windows keeps out of screenshots
+        self._watcher: Watcher | None = None
 
     def _scn(self) -> Scanner:
         if self._scanner is None:
@@ -159,11 +161,36 @@ class Api:
             self._map_window = None
             self._map_url = None
         self._map_window.events.closed += closed
+        self._map_window.events.shown += lambda: self._exclude(self._map_window, "map")
         return True
 
     def reset_vault_session(self):
         self._scn().reset_vault_session()
         return True
+
+    def set_auto(self, on):
+        """Turn the automatic reading (background watcher) on or off."""
+        if self._watcher:
+            self._watcher.on = bool(on)
+            logging.info("auto read: %s", "on" if on else "off")
+        return bool(self._watcher and self._watcher.on)
+
+    def auto_status(self):
+        w = self._watcher
+        return {"on": bool(w and w.on), "state": w.state if w else "off", "excluded": sorted(self._excluded)}
+
+    def _exclude(self, window, name):
+        """Keep a window out of screen capture, so it can stay visible while the game is read."""
+        try:
+            hwnd = window.native.Handle.ToInt64()
+        except Exception:
+            logging.exception("no window handle for %s", name)
+            return False
+        ok = capture.exclude_from_capture(hwnd)
+        if ok:
+            self._excluded.add(name)
+        logging.info("exclude %s from capture: %s", name, ok)
+        return ok
 
     # ---- internals ----
     def _safe_scan(self, img):
@@ -190,6 +217,10 @@ class Api:
             return None
 
     def _grab(self):
+        if self._watcher:
+            self._watcher.stream.stop()                     # dxcam: one capture at a time per screen
+        if "main" in self._excluded and (self._map_window is None or "map" in self._excluded):
+            return capture.grab(self._monitor, bring_to_front=True)   # the overlay isn't in the picture
         was_visible = self._visible
         mw = self._map_window
         if was_visible:               # keep the overlay (and the map window) out of the screenshot
@@ -227,6 +258,106 @@ class Api:
             if mw is not None:
                 self._safe(mw.show)
         self._visible = not self._visible
+
+
+class Watcher(threading.Thread):
+    """Reads the game by itself: a few frames a second of the game window (only while the game is in
+    front), and when the stash or an open quest has settled on screen and changed since the last read,
+    it is scanned and the result sent to the page (window.onAutoScan). Cheap screens only: the stash
+    (rows already read come from a cache) and a quest at a trader (fixed places, ~0.5 s). Anything
+    else is ignored without screen-wide text recognition."""
+
+    ROIS = {"stash": (100, 250, 720, 1080), "quest": (840, 100, 1880, 980)}   # 1080p: stash panel, quest panel
+    NEW_VISIT = 30.0          # seconds without the stash after which it is read from scratch again
+
+    def __init__(self, api: Api):
+        super().__init__(daemon=True)
+        self.api, self.on, self.state = api, True, "starting"
+        self.stream = capture.Stream(fps=4)
+        self.prev, self.since, self.done = {}, {}, {}
+        self.last_stash, self.last_scan = 0.0, 0.0
+
+    def _sigs(self, f):
+        h, w = f.shape[:2]
+        k = h / 1080
+        g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        out = {}
+        for name, (x0, y0, x1, y1) in self.ROIS.items():
+            roi = g[int(y0 * k):int(y1 * k), int(x0 * k):int(x1 * k)]
+            out[name] = cv2.resize(roi, (64, 64), interpolation=cv2.INTER_AREA).astype(np.float32) if roi.size else None
+        return out
+
+    def run(self):
+        while True:
+            try:
+                self._step()
+            except Exception:
+                logging.exception("auto read crashed")
+                self.stream.stop()
+                time.sleep(3.0)
+
+    def _step(self):
+        if not self.on:
+            self.stream.stop()
+            self.state = "off"
+            time.sleep(1.0)
+            return
+        if self.api._lock.locked():                          # an F9 scan is running
+            time.sleep(0.5)
+            return
+        try:
+            f, why = self.stream.frame()
+        except Exception as e:
+            logging.warning("auto read: capture failed: %s", e)
+            self.stream.stop()
+            self.state = "capture failed"
+            time.sleep(3.0)
+            return
+        if f is None:
+            self.state = why
+            time.sleep(1.0)
+            return
+        self.state = "watching"
+        now = time.time()
+        due = False
+        for name, s in self._sigs(f).items():
+            if s is None:
+                continue
+            p = self.prev.get(name)
+            self.prev[name] = s
+            if p is None or float(np.abs(s - p).mean()) > 2.0:      # still moving
+                self.since[name] = now
+                continue
+            if now - self.since.get(name, now) < 0.3:
+                continue
+            d = self.done.get(name)
+            if d is None or float(np.abs(s - d).mean()) > 1.5:      # settled and not read like this yet
+                due = True
+        if not due or now - self.last_scan < 0.8:
+            return
+        for name in self.ROIS:
+            self.done[name] = self.prev.get(name)
+        self.last_scan = now
+        with self.api._lock:
+            scn = self.api._scn()
+            t0 = time.time()
+            res = scn.scan(f, auto=True)
+            if res and res.get("kind") == "vault" and self.last_stash and now - self.last_stash > self.NEW_VISIT:
+                # back at the stash after a while: read it from scratch (the cache keeps it fast)
+                scn.reset_vault_session()
+                res = scn.scan(f, auto=True)
+        if not res:
+            return
+        if res.get("kind") == "vault":
+            self.last_stash = time.time()
+        res["auto"] = True
+        logging.info("auto read (%.1fs): %s", time.time() - t0,
+                     {k: (v if k not in ("items", "quests", "unknowns", "categories") else len(v))
+                      for k, v in res.items() if k not in ("debug",)})
+        try:
+            self.api._window.evaluate_js(f"window.onAutoScan&&window.onAutoScan({json.dumps(res)})")
+        except Exception:
+            pass
 
 
 def update_data(api: Api):
@@ -323,8 +454,12 @@ def main(launch=None):
         on_top=True, resizable=True, background_color="#12161B")
     threading.Thread(target=api._scn, daemon=True).start()   # warm up OCR models
 
+    api._window.events.shown += lambda: api._exclude(api._window, "main")
+
     def on_start():
         start_hotkeys(api)
+        api._watcher = Watcher(api)
+        api._watcher.start()
         if not a.no_update:
             threading.Thread(target=update_data, args=(api,), daemon=True).start()
     webview.start(on_start, private_mode=False, storage_path=DATA_DIR)

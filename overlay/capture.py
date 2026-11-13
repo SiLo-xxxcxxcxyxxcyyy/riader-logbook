@@ -194,3 +194,75 @@ def grab(monitor=1, bring_to_front=False):
                            "if you scrolled or switched tabs, the game picture didn't refresh.").strip()
     _LAST["hash"] = h
     return shot, info
+
+
+def exclude_from_capture(hwnd):
+    """Keep one of our windows out of screenshots and screen capture (Windows 10 2004+), so the
+    overlay never has to hide while the game is read. Returns True if Windows accepted it."""
+    if os.name != "nt" or not hwnd:
+        return False
+    import ctypes
+    WDA_EXCLUDEFROMCAPTURE = 0x11
+    try:
+        return bool(ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(int(hwnd)), WDA_EXCLUDEFROMCAPTURE))
+    except Exception:
+        return False
+
+
+class Stream:
+    """A few frames a second of the game window, for the background watcher. Only while the game is
+    the foreground window (in a menu you're using it; tabbed out, nothing is read)."""
+
+    def __init__(self, fps=4):
+        self.fps, self.cam, self.key = fps, None, None
+        self._game, self._game_at = None, 0.0
+        self.require_front = True
+
+    def _find(self):
+        if time.time() - self._game_at > 2.0:
+            self._game, self._game_at = _windows_game_window(), time.time()
+        return self._game
+
+    def frame(self):
+        """(BGR frame or None, reason). Blocks for at most about one frame interval."""
+        if os.name != "nt":
+            return None, "not windows"
+        import ctypes
+        g = self._find()
+        if not g:
+            self.stop()
+            return None, "game not running"
+        hwnd = g[0]
+        if self.require_front and ctypes.windll.user32.GetForegroundWindow() != hwnd:
+            self.stop()
+            return None, "game in background"
+        l, t, r, b = _client_rect(hwnd)
+        if r - l < 200 or b - t < 200:
+            return None, "game minimised"
+        region = {"left": l, "top": t, "width": r - l, "height": b - t}
+        dev, idx, m = _dxgi_output_for(region)
+        x0, y0 = region["left"] - m["left"], region["top"] - m["top"]
+        box = (max(0, x0), max(0, y0), min(m["width"], x0 + region["width"]), min(m["height"], y0 + region["height"]))
+        key = (dev, idx, box)
+        if key != self.key:
+            self.stop()
+            import dxcam
+            cam = _CAMS.get((dev, idx))
+            if cam is None or getattr(cam, "is_released", False):
+                cam = _CAMS[(dev, idx)] = dxcam.create(device_idx=dev, output_idx=idx, output_color="BGR")
+            cam.start(region=box, target_fps=self.fps, video_mode=True)
+            self.cam, self.key = cam, key
+        out = {}
+        th = threading.Thread(target=lambda: out.setdefault("f", self.cam.get_latest_frame()), daemon=True)
+        th.start()
+        th.join(2.0)
+        f = out.get("f")
+        return (np.ascontiguousarray(f), "ok") if f is not None else (None, "no frame")
+
+    def stop(self):
+        if self.cam is not None:
+            try:
+                self.cam.stop()
+            except Exception:
+                pass
+        self.cam, self.key = None, None

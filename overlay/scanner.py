@@ -35,6 +35,7 @@ DINO_MIN = {"base": 0.78, "web": 0.44, "taught": 0.9}   # DINOv2 similarity need
 DINO_MARGIN = 0.02            # ...and the lead over the best other item
 LEARNED_MIN = 0.9            # taught pictures only count above this similarity
 DETAIL_MARGIN = 0.05        # the detail picture must beat the main match's detail by this much       # rows/cols of a 64px slot where the eye / quest-diamond badge sits
+CACHE_SAME = 0.995            # whole-slot picture similarity at which an earlier reading is reused
 MATCH_MIN = 0.62              # minimum similarity to accept an icon match
 QUEST_MIN = 86                # minimum fuzzy score (0-100) to accept a quest title
 
@@ -79,6 +80,7 @@ class Scanner:
         num = np.load(os.path.join(assets, "numerals.npz")) if os.path.exists(os.path.join(assets, "numerals.npz")) else None
         self._numerals = [(str(l), im.astype(np.float32)) for l, im in zip(num["labels"], num["imgs"])] if num is not None else []
         self._ocr = None
+        self._cache_vecs, self._cache_vals = [], []
         self.reset_vault_session()
 
     @staticmethod
@@ -297,16 +299,23 @@ class Scanner:
         slots = self.find_slots(img)
         if len(slots) < 4:
             return None
-        found, unknown, pending = [], 0, []
+        found, unknown, pending, cached, vecs = [], 0, [], [], []
         for (x, y, w, h) in slots:
             crop = img[y:y + h, x:x + w]
             if crop.size == 0 or self._is_empty(crop):     # empty slot (just the frame)
                 continue
+            cv = self._cache_vec(crop)
+            hit = self._cache_get(cv)
+            if hit is not None:                            # the same slot seen in an earlier frame
+                cached.append({**hit, "crop": crop.copy(), "box": (x, y, w, h)})
+                continue
             old, (x, y, w, h) = self.classify_slot(img, (x, y, w, h))
             pending.append((old, (x, y, w, h), img[y:y + h, x:x + w].copy()))
+            vecs.append(cv)
         embs = self._dino.embed([self._dino_size(c) for _, _, c in pending]) if self._dino and pending else None
         for n, (((iid, score), (alt, alt_score)), (x, y, w, h), c) in enumerate(pending):
-            slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1}
+            slot = {"crop": c, "key": self._slot_key(c), "feat": self._feature(c), "box": (x, y, w, h), "count": 1,
+                    "cvec": vecs[n]}
             sure = score >= MATCH_MIN
             # a near-exact pixel match (a picture you taught, or the same render) is reliable: keep it,
             # unless DINOv2 rates that item clearly lower than its best. The pixel features hardly see
@@ -339,15 +348,42 @@ class Scanner:
             if alt != iid and score - alt_score < 0.02 and not (tier_read and self.family(alt)[0] == self.family(iid)[0]):
                 score = min(score, 0.7)
             found.append({**slot, "id": tiered, "score": score})
-        if sum(1 for f in found if not f.get("unknown")) < 1 and len(found) < 3:
+        if sum(1 for f in found + cached if not f.get("unknown")) < 1 and len(found) + len(cached) < 3:
             return None
         self._read_counts(img, found)
-        return {"slots": found, "unknown": unknown}
+        for f in found:
+            self._cache_put(f)
+        found = sorted(found + cached, key=lambda s: (s["box"][1], s["box"][0]))
+        return {"slots": found, "unknown": sum(1 for f in found if f.get("unknown"))}
+
+    # ---------- slot cache: a slot whose picture (count included) was already read ----------
+    @staticmethod
+    def _cache_vec(crop):
+        g = cv2.cvtColor(cv2.resize(crop, (32, 32), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32).ravel()
+        g -= g.mean()
+        n = float(np.linalg.norm(g))
+        return g / n if n > 1e-6 else g
+
+    def _cache_get(self, v):
+        if not self._cache_vecs:
+            return None
+        s = np.stack(self._cache_vecs) @ v
+        j = int(np.argmax(s))
+        return dict(self._cache_vals[j]) if s[j] > CACHE_SAME else None
+
+    def _cache_put(self, slot):
+        keep = ("id", "score", "count", "key", "feat", "unknown", "guess")
+        self._cache_vecs.append(slot.pop("cvec"))
+        self._cache_vals.append({k: slot[k] for k in keep if k in slot})
+        if len(self._cache_vecs) > 600:
+            del self._cache_vecs[:100], self._cache_vals[:100]
 
     def _read_counts(self, img, found):
         """Read the stack count of each slot with recognition-only OCR on the slot corners."""
         for s in found:
             st = 9999 if s.get("unknown") else (self.items.get(s["id"], {}).get("st") or 1)
+            if st <= 1:                     # doesn't stack (weapons, keys, augments): always one
+                continue
             x, y, w, h = s["box"]
             best = None
             for (ya, yb, xa, xb) in ((0.70, 1.0, 0.45, 1.0), (0.0, 0.30, 0.45, 1.0)):   # bottom-right, top-right
@@ -379,6 +415,36 @@ class Scanner:
         self._variant_crops = {}   # (item_id, slot key) -> picture, so a wrong match can be corrected
         self._cats = {}            # stash category index (0 = all) -> {"used", "cap", "slots"}
         self._cat = None           # category of the last page
+        self._seq, self._pos = {}, {}   # category -> rows seen so far in stash order / where the last page was
+        self._value = None         # stash value in creds, from the header
+        self._gaps = 0             # pages that didn't line up with anything seen (scrolled past rows)
+
+    def fast_header(self, small, k):
+        """Read the stash header from its fixed place (top left, under the STASH title) with
+        recognition only, no text search over the screen: (header, label position, stash value) or
+        None if the title there isn't STASH. ~0.1 s instead of ~3 s."""
+        line = getattr(self.ocr, "line", None)
+        if line is None:
+            return None
+        def crop(x0, y0, x1, y1):
+            return small[int(y0 * k):int(y1 * k), int(x0 * k):int(x1 * k)]
+        title = line(crop(140, 138, 260, 174))
+        if _norm(title) != "stash":
+            return None
+        nums = line(crop(168, 170, 420, 198))
+        m = re.search(r"(\d{1,4})\s*[/l|]\s*(\d{2,4})", nums)
+        head = None
+        if m and int(m.group(1)) <= int(m.group(2)):
+            head = {"used": int(m.group(1)), "cap": int(m.group(2))}
+            rest = nums[m.end():]
+        else:
+            m = re.match(r"\D{0,3}?(\d{1,4})(?![\d,.])", nums)
+            if m:
+                head = {"used": int(m.group(1)), "cap": None}
+            rest = nums[m.end():] if m else nums
+        v = re.search(r"(\d{1,3}(?:[,.\s]\d{3})+|\d{4,})", rest)
+        value = int(re.sub(r"\D", "", v.group(1))) if v else None
+        return head, (189 * k, 155 * k), value
 
     @staticmethod
     def read_stash_header(lines, k=1.0):
@@ -440,20 +506,41 @@ class Scanner:
         return len(a) == len(b) and all(float(x @ y) > ROW_SAME for x, y in zip(a, b))
 
     def _add_vault_page(self, page):
-        """Add a page, skipping rows already counted when the stash was only scrolled a bit."""
+        """Add a page, counting only rows not seen before. Every row of the stash seen so far is kept in
+        order (per category); a new page is placed where its rows line up with them, so scrolling a
+        little, scrolling back up or seeing the same page again counts nothing twice."""
         rows = self._rows(page["slots"])
         feats = [[s["feat"] for s in r] for r in rows]
-        last = self._last_rows
-        skip = 0
-        for k in range(min(len(feats), len(last)), 0, -1):       # largest overlap: our first k rows == their last k
-            if all(self._same_row(a, b) for a, b in zip(feats[:k], last[-k:])):
-                skip = k
-                break
-        if skip == len(rows) and len(rows) == len(last):          # the same page again
+        seq = self._seq.setdefault(self._cat, [])
+        best = None                                              # (overlap, -distance to last place, offset)
+        for o in range(-len(feats) + 1, len(seq) + 1):           # page row i lines up with seq[o + i]
+            ov = 0
+            for i, f in enumerate(feats):
+                j = o + i
+                if 0 <= j < len(seq):
+                    if not self._same_row(f, seq[j]):
+                        ov = -1
+                        break
+                    ov += 1
+            if ov > 0:
+                cand = (ov, -abs(o - self._pos.get(self._cat, 0)), o)
+                best = cand if best is None or cand > best else best
+        o = best[2] if best else len(seq)                        # no overlap: below what we have (scrolled fast)
+        if best is None and seq:
+            self._gaps += 1
+        new_idx = [i for i in range(len(rows)) if not 0 <= o + i < len(seq)]
+        if not new_idx:                                          # the same rows again
+            self._pos[self._cat] = o
             return False
+        above = [feats[i] for i in new_idx if o + i < 0]
+        below = [feats[i] for i in new_idx if o + i >= len(seq)]
+        seq[:0] = above
+        seq.extend(below)
+        self._pos[self._cat] = o + len(above)
+        self._last_rows = feats
         self._pages.append(len(rows))
         self._last_rows = feats
-        new = [s for r in rows[skip:] for s in r]
+        new = [s for i in new_idx for s in rows[i]]
         self._slots += len(new)
         cat = self._cats.get(self._cat)
         if cat is not None:
@@ -494,6 +581,7 @@ class Scanner:
                 return None
             crop, count = self._unknown_crops.pop(key), u["count"]
         self._add_ref(to_id, crop)
+        self._cache_vecs, self._cache_vals = [], []          # cached answers may be the old, wrong ones
         if self.learned_dir:
             os.makedirs(self.learned_dir, exist_ok=True)
             cv2.imencode(".png", crop)[1].tofile(os.path.join(self.learned_dir, f"{to_id}__{key[:16]}.png"))
@@ -514,7 +602,7 @@ class Scanner:
                 "slots": self._slots, "stash": self._cats.get(self._cat) and {"cat": self._cat, **self._cats[self._cat]},
                 "categories": cats,
                 # the all-items view plus a category in one session counts that category twice
-                "mixed": 0 in self._cats and len(self._cats) > 1}
+                "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "value": self._value}
 
     # ---------- quests ----------
     def scan_quests(self, lines):
@@ -531,14 +619,79 @@ class Scanner:
                     best[qid] = {"id": qid, "score": float(sc), "text": text}
         return sorted(best.values(), key=lambda q: -q["score"])
 
+    def quest_screen(self, small, k):
+        """A quest open at a trader (Celeste > QUESTS): read its title, its objectives' checkboxes and
+        the player level from their fixed places, with recognition only (~0.3 s, no screen-wide
+        text search). Returns {"id", "score", "text", "steps": [done?...], "level"} or None."""
+        line = getattr(self.ocr, "line", None)
+        if line is None:
+            return None
+        def crop(x0, y0, x1, y1):
+            return small[int(y0 * k):int(y1 * k), int(x0 * k):int(x1 * k)]
+        text = line(crop(850, 424, 1380, 456))
+        t = _norm(text)
+        if len(t) < 4:
+            return None
+        best = max(((fuzz.ratio(t, qn), qid) for qid, qn in self._qnames), default=(0, None))
+        if best[0] < QUEST_MIN:
+            return None
+        # objectives: checkboxes in a column at x 1420-1436 (1080p) on the light panel, joined by a thin
+        # line. A ticked box is filled grey (~100), an open one is light with a dark border. Rows where
+        # both box edges are darker than the panel belong to a box.
+        g = cv2.cvtColor(crop(1415, 120, 1441, 760), cv2.COLOR_BGR2GRAY)
+        steps = []
+        if g.size:
+            xl, xr = int(5 * k), int(20 * k)
+            edge = (g[:, xl] < 200) & (g[:, xr] < 200)
+            y = 0
+            while y < len(edge):
+                if not edge[y]:
+                    y += 1
+                    continue
+                y1 = y
+                while y1 < len(edge) and edge[y1]:
+                    y1 += 1
+                if y1 - y >= int(9 * k):
+                    mid = g[(y + y1) // 2 - int(2 * k):(y + y1) // 2 + int(3 * k), xl + int(3 * k):xr - int(3 * k)]
+                    mid = np.delete(mid, np.s_[max(0, int(13 * k) - xl - int(3 * k) - 1):int(13 * k) - xl - int(3 * k) + 2], axis=1)
+                    steps.append(bool(mid.size and float(np.median(mid)) < 180))
+                y = y1
+        lv = re.sub(r"\D", "", line(crop(1838, 12, 1884, 52)))
+        return {"id": best[1], "score": float(best[0]), "text": text, "steps": steps,
+                "level": int(lv) if lv and 1 <= int(lv) <= 200 else None}
+
     # ---------- entry point ----------
-    def scan(self, img):
-        """Auto-detect what is on screen. Returns a JSON-able dict for the UI."""
+    def scan(self, img, auto=False):
+        """Auto-detect what is on screen. Returns a JSON-able dict for the UI. auto: called by the
+        background watcher, so screens that are neither the stash nor the quest log return None."""
         h, w = img.shape[:2]
         small = img if w <= 1920 else cv2.resize(img, (1920, int(h * 1920 / w)), interpolation=cv2.INTER_AREA)
-        lines = self._read(small)
-        quests = self.scan_quests(lines)
         slots = self.find_slots(img)
+        lines, fast = None, None
+        if len(slots) >= 8:
+            # most likely the stash: read only its header (STASH 287/292, top left) instead of the
+            # whole screen, which takes several seconds
+            k = small.shape[0] / 1080
+            fast = self.fast_header(small, k)
+            if fast:
+                lines = []
+            else:
+                top = self._read(small[:int(300 * k), :int(700 * k)])
+                if any(_norm(t) == "stash" for t, _, _ in top):
+                    lines = top
+        if lines is None and len(slots) < 8:
+            qs = self.quest_screen(small, small.shape[0] / 1080)
+            if qs:
+                q = self._quests.get(qs["id"])
+                new = [] if q else [qs["id"]]
+                self._quests[qs["id"]] = {**(q or {}), **qs, "score": max(qs["score"], (q or {}).get("score", 0))}
+                return {"kind": "quests", "quests": sorted(self._quests.values(), key=lambda q: -q["score"]),
+                        "added": new, "level": qs["level"], "screen": qs["id"]}
+        if lines is None:
+            if auto:
+                return None              # not the stash nor an open quest: stay cheap, no screen-wide OCR
+            lines = self._read(small)
+        quests = self.scan_quests(lines)
         if quests and len(slots) < 8:                            # a quest screen (reward icons are a few slots)
             new = [q["id"] for q in quests if q["id"] not in self._quests]
             for q in quests:
@@ -548,19 +701,21 @@ class Scanner:
         page = self.scan_vault(img)
         if page:
             k = small.shape[0] / 1080
-            head, label = self.read_stash_header(lines, k)
+            head, label = (fast[0], fast[1]) if fast else self.read_stash_header(lines, k)
+            if fast and fast[2]:
+                self._value = fast[2]
             cat = self.stash_category(small, label, k)
             if cat is None and head:
                 cat = 0 if head["cap"] else -1                   # -1: some category, button not found
             if cat is not None:
-                if cat != self._cat:
-                    self._last_rows = []                          # other category: no overlap with the last page
                 self._cat = cat
                 c = self._cats.setdefault(cat, {"used": None, "cap": None, "slots": 0})
                 if head:
                     c["used"], c["cap"] = head["used"], head["cap"]
             added = self._add_vault_page(page)
             return {**self._vault_result(), "duplicate": not added}
+        if auto:
+            return None
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
                 "debug": {"size": f"{w}x{h}", "text_lines": len(lines), "slots_found": len(slots),
                           "slot_size": int(np.median([s[2] for s in slots])) if slots else 0}}
@@ -593,6 +748,15 @@ def _ocr_engine(text_score=None):
             txts = list(getattr(r, "txts", None) or [])
             scores = list(getattr(r, "scores", None) or [])
             return [([[0, 0], [w, 0], [w, h], [0, h]], t, float(sc)) for t, sc in zip(txts, scores) if t]
+
+        def line(img):
+            """Read a crop that holds one line of text (no text detection): the text, or ''."""
+            if img is None or img.size == 0:
+                return ""
+            pad = cv2.copyMakeBorder(img, 6, 6, 12, 12, cv2.BORDER_REPLICATE)
+            r = eng(pad, use_det=False, use_cls=False, use_rec=True)
+            return " ".join(t for t in (getattr(r, "txts", None) or []) if t).strip()
+        run.line = line
         return run
     except ImportError:
         from rapidocr_onnxruntime import RapidOCR

@@ -563,6 +563,7 @@ V.scan=()=>{
    <div class="stack" style="gap:4px"><div class="eyebrow">Screen scan</div><h1>Read it from the game</h1>
    <p class="mut" style="margin:0;max-width:65ch">The desktop overlay reads your screen like a screenshot tool. It never touches the game's memory or files and never sends input to the game.</p></div>
    <div class="panel stack web-only"><h2>Available in the desktop overlay</h2><p class="mut" style="margin:0">Screen scanning needs the Raider Logbook desktop app on Windows. Everything else on this page works in the browser too.</p></div>
+   ${autoPanel()}
    <div class="panel stack desk-only"><h2>Hotkeys</h2>
     <div class="kv"><dt><span class="kbd">F8</span></dt><dd>Show or hide the overlay</dd>
     <dt><span class="kbd">F9</span></dt><dd>Scan the screen. Works on the quest log and on vault pages; the app works out which one it is.</dd>
@@ -859,6 +860,54 @@ window.onScanResult=r=>{
   S.scan=r;S.tab="scan";render();
   toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?(r.duplicate?"Same page as before: scroll the stash, then press F9":r.stash&&r.stash.used!=null?(r.stash.slots>=r.stash.used?`Done: ${r.stash.slots}/${r.stash.used} ${r.stash.cat===0?"stash slots":"in this category"} scanned`:`${r.stash.slots}/${r.stash.used} ${r.stash.cat===0?"stash slots":"in this category"} scanned`):`${plural(r.items.length,"item type")} recognised`):"Nothing recognised");
 };
+/* ---------- automatic reading (the desktop app watches the game by itself) ---------- */
+S.auto=S.auto??true;S.qsteps=S.qsteps||{};
+const AUTO_STATE={watching:"Watching the game",starting:"Starting…","game not running":"Waiting for ARC Raiders to start","game in background":"Paused: the game isn't the window in front","game minimised":"Paused: the game is minimised","capture failed":"Can't capture the game right now",off:"Off","no frame":"Watching the game"};
+let autoBarT=0;
+function autoBar(msg){const bar=$("#scanbar");if(!bar||!$("#scanbarText"))return;bar.hidden=false;$("#scanbarText").textContent=msg;clearTimeout(autoBarT);autoBarT=setTimeout(()=>{bar.hidden=true},3500)}
+// a quest read from the game is in your log: what comes before it is done, it and what follows isn't
+function addActiveQuest(id){
+  snapshotDone();S.active=S.active||{};const anc=ancestors(id);
+  Object.keys(S.active).forEach(a=>{if(anc.has(a))delete S.active[a]});
+  S.active[id]=1;anc.forEach(a=>S.done[a]=true);delete S.done[id];descendants(id).forEach(x=>delete S.done[x]);
+}
+window.onAutoScan=r=>{
+  if(!r||!S.auto)return;
+  if(r.kind==="quests"){
+    if(r.level){S.level=r.level;S.levelAt=Date.now()}
+    const id=r.screen,q=(r.quests||[]).find(x=>x.id===id);
+    if(!q||q.score<90||!Q[id]){save();return}
+    const steps=q.steps||[],prev=S.qsteps[id];
+    S.qsteps[id]={s:steps,at:Date.now()};
+    const fresh=!(S.active&&S.active[id]);
+    if(fresh)addActiveQuest(id);
+    if(fresh||!prev||prev.s.join()!==steps.join())toast(`${fresh?"Quest added":"Quest updated"}: ${Q[id].n}${steps.length?` · ${steps.filter(Boolean).length}/${steps.length} steps`:""}`);
+    render();return;
+  }
+  if(r.kind==="vault"){
+    const st=r.stash;
+    if(st&&st.cat===0&&st.used!=null)S.stashInfo={...(S.stashInfo||{}),used:st.used,cap:st.cap,value:r.value??(S.stashInfo||{}).value,read:st.slots,seen:Date.now()};
+    if(r.duplicate){save();return}
+    if(!st||st.used==null){autoBar(`Reading the stash: ${r.slots} slots`);save();return}
+    if(st.cat!==0){autoBar(`Reading a stash category: ${st.slots}/${st.used}. Pick “All” to update your vault.`);save();return}
+    if(st.slots<st.used){autoBar(`Reading the stash: ${st.slots}/${st.used} slots. Keep scrolling down.`);save();return}
+    if(st.slots>st.used||r.mixed){S.scan=r;autoBar(`Read ${st.slots} slots but the stash has ${st.used}. Check it on the Scan tab.`);render();return}
+    if((r.unknowns||[]).length){S.scan=r;S.tab="scan";render();toast(`Stash read. ${plural(r.unknowns.length,"item")} need a name before the vault is updated.`);return}
+    S.inv={};r.items.forEach(x=>{if(x.count>0)S.inv[x.id]=x.count});
+    S.stashInfo.done=Date.now();S.scan=null;render();
+    autoBar(`Stash read: all ${st.used} slots. Vault updated.`);toast(`Vault updated from the stash: ${plural(r.items.length,"item type")}`);
+  }
+};
+function autoPanel(){
+  return `<div class="panel stack desk-only"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Automatic reading</h2>
+    <label class="row"><input type="checkbox" id="optAuto" ${S.auto?"checked":""}> On</label></div>
+    <p class="mut" style="margin:0;font-size:13px">While the game is the window in front, the app reads it by itself: scroll through your stash (category <b>All</b>) and the vault updates when every slot is read; open a quest at its trader and it's added with its steps. Nothing to press. F9 still works.</p>
+    <p class="mono mut" style="margin:0;font-size:12px" id="autoState">${S.auto?"…":"Off"}</p></div>`;
+}
+function refreshAutoState(){const el=$("#autoState");if(!el||!api()||!api().auto_status)return;
+  api().auto_status().then(s=>{const e=$("#autoState");if(e)e.textContent=(AUTO_STATE[s.state]||s.state)+(s.excluded&&s.excluded.length?" · the overlay stays out of the screenshots":"")})}
+setInterval(refreshAutoState,2000);
+window.addEventListener("pywebviewready",()=>{api()&&api().set_auto&&api().set_auto(S.auto)});
 // Active quests you've confirmed by scanning are never marked done, nor anything after them.
 // That matters for quests with several possible previous quests.
 function questScanTarget(replace){
@@ -976,6 +1025,7 @@ document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   else if(d.given){const [pid,it]=d.given.split("|"),p=D.projects[pid],n=p.ph[S.proj[pid]||0]?.req[it]||0;
     (S.projGiven[pid]=S.projGiven[pid]||{})[it]=Math.max(0,Math.min(n,Math.round(+t.value||0)));render()}
   else if(t.id==="optFuture"){S.future=t.checked;render()}
+  else if(t.id==="optAuto"){S.auto=t.checked;api()&&api().set_auto&&api().set_auto(S.auto);render()}
   else if(t.id==="pinQ"){S.pinQ=t.value;save()}
   else if(t.id==="routeT"){S.routeT=t.value;render()}
   else if(t.id==="showRoute"){S.showRoute=t.checked;render()}
