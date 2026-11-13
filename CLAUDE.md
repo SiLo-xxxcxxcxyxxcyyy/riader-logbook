@@ -65,3 +65,8 @@ github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes
 - The window must load the page as a file:// URL. A plain path makes pywebview serve it from
   http://127.0.0.1:42001: another origin with its own localStorage (vault/quests looked wiped when the data
   refresh failed to reload the page), and its server locked index.html so the refresh failed.
+- Vault verdicts (web/app.html `verdict`): needs = unfinished quests (incl. future), workshop/outpost levels,
+  projects + current expedition (older expeditions start complete). Then crafting material if a recipe,
+  upgrade or repair takes it (`uses`: MetaForge relations via build.py `mf_relations`, plus
+  sources/item_uses.json); common basic materials kept up to S.stockBasic (400), rest sold. Recycle when
+  it yields something you're short of (deficit, or crafting material below S.stockMat=50), else sell.

@@ -167,7 +167,11 @@ const MATS=new Set(["Basic Material","Refined Material","Topside Material","Natu
 
 /* ---------- state ---------- */
 const KEY="raider-logbook-v1";
-const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:false,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"mine",vf:"all",scan:null},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
+const S=Object.assign({inv:{},done:{},hide:{},proj:{},useProj:true,future:true,pins:{},tab:"lobby",lobbyMap:null,qf:"mine",vf:"all",scan:null,stockBasic:400,stockMat:50},(()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}})());
+// v2 verdicts: projects (expeditions) count by default; past seasons' expeditions start as complete
+if(!S.v2){S.v2=1;S.useProj=true;S.stockBasic=S.stockBasic||400;S.stockMat=S.stockMat||50;
+  for(const p of ["expedition_project_s1","expedition_project","expedition_project_s3","expedition_project_s4"])
+    if(D.projects[p]&&S.proj[p]==null)S.proj[p]=D.projects[p].ph.length}
 // scan thumbnails stay out of storage: hundreds of them could push the whole state past the quota
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S,(k,v)=>k==="img"&&typeof v==="string"&&v.startsWith("data:")?undefined:v))}catch(e){}}
 const $=s=>document.querySelector(s);
@@ -207,21 +211,54 @@ function computeNeeds(){
 const needTotal=id=>(NEEDS[id]||[]).reduce((a,b)=>a+b.q,0);
 const deficit=id=>Math.max(0,needTotal(id)-have(id));
 const RECIPE_USE={};for(const[id,it]of Object.entries(D.items))for(const m of Object.keys(it.rp||{}))(RECIPE_USE[m]=RECIPE_USE[m]||[]).push(id);
+// everything an item is good for besides quests / workshop / projects: crafting recipes, weapon
+// upgrades and repairs (MetaForge), and hand-kept notes (sources/item_uses.json)
+function uses(id){
+  const out=(RECIPE_USE[id]||[]).map(x=>({k:"craft",for:x}));
+  for(const[k,f]of(I(id).us||[]))out.push(k==="note"?{k,note:f}:{k,for:f});
+  return out;
+}
+function usesText(id,max=3){
+  const u=uses(id);if(!u.length)return"";
+  const note=u.find(x=>x.k==="note");if(note)return note.note;
+  const names=[...new Set(u.map(x=>nm(x.for).replace(/\s*\(.*\)$/,"").replace(/ Blueprint$/,"")))];
+  const kinds=new Set(u.map(x=>x.k));
+  const verb=kinds.has("craft")?"crafts":kinds.has("upgrade")?"upgrades":"repairs";
+  return `${verb} ${names.slice(0,max).join(", ")}${names.length>max?` and ${names.length-max} more`:""}`;
+}
+const isGear=it=>GEAR.has(it.t)||WEAPON_T.has(it.t)||/weapon/i.test(it.t||"");
+const isBasic=id=>I(id).t==="Basic Material"&&(I(id).r||"Common")==="Common";
+// how many of a crafting material you like to have: common basic materials up to S.stockBasic (the
+// rest is sold), other materials you craft with are kept, and below S.stockMat you'd rather recycle into them
+const stockTarget=id=>isBasic(id)?S.stockBasic:S.stockMat;
+// short of it: needed for a quest / upgrade / project, or a crafting material below its stock target
+const short=id=>deficit(id)>0||(uses(id).length>0&&!isGear(I(id))&&have(id)<stockTarget(id));
 
 function verdict(id,count){
   const it=I(id),n=needTotal(id),keep=Math.min(count,n),extra=count-keep;
   const base={keep,extra,n};
   if(count===0)return{...base,k:n?"recycle":"mat",label:n?"Wanted":"None",why:n?`You need ${n}, you have none`:"Not in your vault"};
   if(extra<=0)return{...base,k:"keep",label:"Keep",why:count<n?`Keep all, you still need ${n-count} more`:"You need all of them"};
-  const pre=keep>0?`Keep ${keep}, then `:"";
+  const pre=keep>0?`Keep ${keep} for ${(NEEDS[id]||[]).map(x=>x.src.replace(/^Quest: /,"")).slice(0,2).join(", ")}, then `:"";
   if(S.use&&S.use[id])return{...base,k:"keep",label:"Keep",why:keep>0?`Keep: needed for ${keep} and you use it`:"You use it in your loadout"};
   if(it.t==="Blueprint")return{...base,k:"learn",label:"Learn",why:pre+"learn the blueprint first, sell duplicates"};
-  if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+"use it in a raid or sell it"};
-  if(GEAR.has(it.t)||/weapon/i.test(it.t||""))return{...base,k:"gear",label:"Gear",why:pre+"sell it unless it's in your loadout (mark it in the item)"};
-  const rc=Object.keys(it.rc||{}).filter(m=>deficit(m)>0);
-  if(rc.length)return{...base,k:"recycle",label:"Recycle",why:pre+"recycle it for "+rc.map(m=>`${it.rc[m]}× ${nm(m)}`).join(", "),rc};
-  if(MATS.has(it.t)&&RECIPE_USE[id])return{...base,k:"mat",label:"Material",why:pre+`used in ${plural(RECIPE_USE[id].length,"recipe")}, keep a sensible stock`};
-  return{...base,k:"sell",label:"Sell",why:pre+`nothing needs it · ${fmt(extra*(it.v||0))} creds`};
+  const used=uses(id);
+  if(it.t==="Key")return{...base,k:"gear",label:"Key",why:pre+(used.length?`keep: ${usesText(id)}`:"use it in a raid or sell it")};
+  if(isGear(it))return{...base,k:"gear",label:"Gear",why:pre+(used.length?`${usesText(id)} · `:"")+"sell it unless it's in your loadout (mark it in the item)"};
+  // crafting materials: anything a recipe, upgrade or repair takes
+  if(used.length){
+    if(isBasic(id)){
+      if(count<=S.stockBasic)return{...base,k:"mat",label:"Material",why:pre+`keep up to ${S.stockBasic} (you have ${count}) · ${usesText(id)}`};
+      const sell=count-Math.max(keep,S.stockBasic);
+      return{...base,extra:sell,k:"sell",label:"Sell extra",why:`keep ${Math.max(keep,S.stockBasic)}, sell ${sell} · ${fmt(sell*(it.v||0))} creds`};
+    }
+    return{...base,k:"mat",label:"Material",why:pre+`keep: ${usesText(id)}`};
+  }
+  // recycle when it gives something you're short of
+  const rc=Object.keys(it.rc||{}).filter(short);
+  if(rc.length)return{...base,k:"recycle",label:"Recycle",why:pre+"recycle it for "+rc.map(m=>`${it.rc[m]}× ${nm(m)} (you have ${have(m)}${deficit(m)>0?`, need ${needTotal(m)}`:` of ${stockTarget(m)}`})`).join(", "),rc};
+  const gives=Object.keys(it.rc||{});
+  return{...base,k:"sell",label:"Sell",why:pre+`no quest, workshop, project or crafting use left${gives.length?` and you have enough ${gives.map(nm).join(", ")}`:""} · ${fmt(extra*(it.v||0))} creds`};
 }
 
 /* ---------- where to find ---------- */
@@ -245,7 +282,7 @@ function openItem(id){
   let h=`<div class="row"><span class="pill v-${v.k}">${v.label}</span><span class="mut">${esc(v.why)}</span></div>
   <div class="row"><label for="dlgQty" class="mut">In my vault</label><input type="number" min="0" id="dlgQty" value="${have(id)}"><span class="mono mut">· value ${fmt(it.v||0)} · stack ${it.st??"–"} · ${it.w??"–"} kg</span></div>`;
   h+=sec(`Needed in total: ${needTotal(id)}`,needs.length?`<ul class="plain">${needs.map(n=>`<li><span class="mono">${n.q}×</span> ${esc(n.src)} ${n.kind==="qa"||n.kind==="ha"?'<span class="chip map">now</span>':''}</li>`).join("")}</ul>`:"");
-  if(GEAR.has(it.t)||/weapon/i.test(it.t||""))h+=`<label class="row"><input type="checkbox" data-use="${esc(id)}" ${S.use&&S.use[id]?"checked":""}> I use this in my loadout (always keep it)</label>`;
+  if(isGear(it))h+=`<label class="row"><input type="checkbox" data-use="${esc(id)}" ${S.use&&S.use[id]?"checked":""}> I use this in my loadout (always keep it)</label>`;
   const gl=(D.guides||[]).filter(g=>g.items.includes(id));
   const where=[];
   if(s.zones.length)where.push(`<li>Loot it in <b>${esc(s.zones.join(", "))}</b> zones (marked by loot icons on the map).</li>`);
@@ -397,6 +434,11 @@ V.vault=()=>{
    ${rows.length?`<div class="sum"><div><span class="eyebrow">Items</span><b>${rows.length}</b></div><div><span class="eyebrow">To sell</span><b class="v-sell">${cnt.sell||0}</b></div><div><span class="eyebrow">To recycle</span><b class="v-recycle">${cnt.recycle||0}</b></div><div><span class="eyebrow">Selling earns</span><b>${fmt(sellVal)}</b></div></div>
    <div class="stack" style="gap:6px"><span class="eyebrow">Stash category</span>
    <div class="filters">${[["all","All",rows.length],...STASH_CATS.map(c=>[c,c,ccnt[c]||0])].map(([k,l,n])=>`<button data-vcat="${esc(k)}" aria-pressed="${vc===k}">${l} ${n}</button>`).join("")}</div>
+   <details class="panel"><summary style="cursor:pointer">How verdicts are decided</summary><div class="stack" style="margin-top:10px;gap:8px">
+    <p class="mut" style="margin:0;font-size:13px">An item is kept when a quest you haven't finished (later ones too), a workshop upgrade or a project / expedition still needs it. Otherwise it's a crafting material if a recipe, weapon upgrade or repair uses it. Anything else is recycled when it gives a material you're short of, or sold. Workshop levels and project progress are set on the Shopping list tab.</p>
+    <div class="row"><label for="stB">Keep up to</label><input id="stB" type="number" min="0" step="50" value="${S.stockBasic}" data-stock="stockBasic" style="width:90px"><span class="mut">of each common basic material (Chemicals, Metal Parts…), sell the rest</span></div>
+    <div class="row"><label for="stM">Recycle into other crafting materials while you have fewer than</label><input id="stM" type="number" min="0" step="10" value="${S.stockMat}" data-stock="stockMat" style="width:90px"></div>
+   </div></details>
    <span class="eyebrow">Verdict</span>
    <div class="filters">${F.map(([k,l,n])=>`<button data-vf="${k}" aria-pressed="${S.vf===k}">${l} ${n||0}</button>`).join("")}</div></div>
    <div class="panel tbl"><table><thead><tr><th>Item</th><th>Type</th><th class="num">Have</th><th>Verdict</th><th>Why</th><th></th></tr></thead><tbody>
@@ -888,6 +930,7 @@ function addActive(){const v=($("#actAdd").value||"").trim().toLowerCase();if(!v
   setActive([...new Set([...Object.keys(S.active||{}),id])]);S.qf="mine";render();$("#actAdd")?.focus();toast(`Added ${Q[id].n}`)}
 document.addEventListener("change",e=>{const t=e.target,d=t.dataset;
   if(d.qty){setQty(d.qty,+t.value);render()}
+  else if(d.stock){S[d.stock]=Math.max(0,Math.round(+t.value||0));render()}
   else if(d.use){S.use=S.use||{};if(t.checked)S.use[d.use]=1;else delete S.use[d.use];save();openItem(d.use)}
   else if(d.scanq!==undefined){S.scan.quests[+d.scanq].use=t.checked;render()}
   else if(d.scancount!==undefined){S.scan.items[+d.scancount].count=Math.max(0,+t.value||0);save()}

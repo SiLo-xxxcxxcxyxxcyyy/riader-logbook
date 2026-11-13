@@ -1,0 +1,8 @@
+{
+  "_comment": "Uses of items that MetaForge / RaidTheory don't list as a recipe, upgrade or repair. item id -> short note shown in the Vault. Kept by hand.",
+  "amplification_module_mk_i": "Upgrades weapons (amplifying)",
+  "amplification_module_mk_ii": "Upgrades weapons (amplifying)",
+  "amplification_module_mk_iii": "Upgrades weapons (amplifying)",
+  "amplification_module_mk_iv": "Upgrades weapons (amplifying)",
+  "amplification_module_mk_v": "Upgrades weapons (amplifying)"
+}

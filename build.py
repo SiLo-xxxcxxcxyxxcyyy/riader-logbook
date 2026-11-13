@@ -278,8 +278,34 @@ def assemble(base, F, log=print):
                 return out
             page += 1
 
+    def mf_relations():
+        """Recipes, recycling and salvage for every item (MetaForge's includeComponents), trimmed
+        to ids and quantities: RaidTheory stopped updating, so newer items (Amplification Modules,
+        ARC Couplers, Emperor Gateway Conduit, amplified weapons) have them only here."""
+        out, page = {}, 1
+        while True:
+            d = json.loads(http(f"{MF}items?limit=100&page={page}&includeComponents=true"))
+            for it in d["data"]:
+                rel = it.get("relationships") or {}
+                ids = lambda lst: {x["item"]["id"]: x.get("quantity", 1) for x in lst or [] if x.get("item")}  # noqa: E731
+                r = {"recipes": [{"st": rc.get("station"), "out": rc.get("outputQuantity", 1), "in": ids(rc.get("ingredients"))}
+                                 for rc in rel.get("recipes") or []],
+                     "rc": ids(rel.get("recycling")),
+                     "sv": {}, "ops": []}
+                for op in rel.get("operations") or []:
+                    if op.get("kind") == "salvage":
+                        r["sv"] = ids(op.get("outputs"))
+                    elif op.get("kind") in ("upgrade", "repair"):        # e.g. 3 Turbine Compressor -> weapon variant
+                        r["ops"].append({"k": op["kind"], "in": ids(op.get("inputs")), "out": list(ids(op.get("outputs")))})
+                if r["recipes"] or r["rc"] or r["sv"] or r["ops"]:
+                    out[it["id"]] = r
+            if not d.get("pagination", {}).get("hasNextPage"):
+                return out
+            page += 1
+
     log("MetaForge …")
     mf_items = F.get("metaforge_items.json", lambda: mf_all("items"), max_age=12 * HOUR) or []
+    mf_rel = F.get("metaforge_relations.json", mf_relations, max_age=24 * HOUR) or {}
     mf_quests = F.get("metaforge_quests.json", lambda: mf_all("quests"), max_age=12 * HOUR) or []
     mf_hideout = F.get("metaforge_hideout.json", lambda: json.loads(http(MF + "hideout?limit=100")), max_age=24 * HOUR) or []
 
@@ -312,7 +338,34 @@ def assemble(base, F, log=print):
         tip = strip_html(it.get("article"))
         if tip: cur["tip"] = tip
         if it.get("guide_url"): cur["gu"] = urllib.parse.urljoin("https://metaforge.app", it["guide_url"])
-    log(f"  items: {len(items)} ({added} new from MetaForge)")
+    filled = 0
+    for mid, r in mf_rel.items():
+        iid = mf_id.get(mid) or resolve(mid)
+        cur = items.get(iid)
+        if cur is None:
+            continue
+        conv = lambda d: {resolve(k): q for k, q in d.items()}  # noqa: E731
+        if r["recipes"] and not cur.get("rp"):
+            cur["rp"] = conv(r["recipes"][0]["in"])
+            filled += 1
+        if r["rc"] and not cur.get("rc"):
+            cur["rc"] = conv(r["rc"])
+        if r["sv"] and not cur.get("sv"):
+            cur["sv"] = conv(r["sv"])
+        # upgrades and repairs of this item: their inputs are uses of those items ("us": [[kind, for, qty]])
+        for op in r.get("ops", []):
+            for m, q in conv(op["in"]).items():
+                if m in items and m != iid:
+                    tgt = resolve(op["out"][0]) if op["out"] else iid
+                    items[m].setdefault("us", []).append([op["k"], tgt, q])
+    # hand-kept uses the data sources don't list (sources/item_uses.json: item -> note)
+    try:
+        for m, note in json.load(open(os.path.join(RES, "sources", "item_uses.json"), encoding="utf-8")).items():
+            if m in items and not m.startswith("_"):
+                items[m].setdefault("us", []).append(["note", note, 0])
+    except OSError:
+        pass
+    log(f"  items: {len(items)} ({added} new from MetaForge, {filled} recipes added from MetaForge)")
 
     def mf_req(lst):
         out = {}
