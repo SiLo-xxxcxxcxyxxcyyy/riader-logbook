@@ -921,6 +921,61 @@ class Scanner:
         return {"id": best[1], "score": float(best[0]), "text": text, "steps": steps,
                 "level": int(lv) if lv and 1 <= int(lv) <= 200 else None}
 
+    WORKSHOP_CARDS = [None, "explosives_bench", "weapon_bench", "utility_bench", "med_station", "refiner",
+                      "equipment_bench", "research_station"]          # left to right after Scrappy (Workbench first)
+
+    @staticmethod
+    def _roman(gray):
+        """Read a small grey roman numeral (I-V) by its strokes: thin vertical strokes are I, a wide
+        one is V (with an I touching it: IV). None if it doesn't look like one."""
+        if gray.size == 0 or gray.max() < 60:
+            return None
+        b = (gray > gray.max() * 0.6) & (gray > 60)
+        ys = np.where(b.any(axis=1))[0]
+        xs = np.where(b.any(axis=0))[0]
+        if len(ys) < 5 or len(xs) < 1:
+            return None
+        h = ys[-1] - ys[0]
+        mid = b[ys[0] + h // 3: ys[-1] - h // 3 + 1]
+        cols = list(mid.any(axis=0)) + [False]
+        runs, start = [], None
+        for j, v in enumerate(cols):
+            if v and start is None:
+                start = j
+            elif not v and start is not None:
+                runs.append(j - start)
+                start = None
+        if not runs:
+            return None
+        if all(r <= max(2, h * 0.3) for r in runs):                  # only thin strokes: I, II, III
+            return len(runs) if len(runs) <= 3 else None
+        width = xs[-1] - xs[0] + 1
+        return 4 if width > h * 0.95 else 5                         # IV is wider than tall, V about square
+
+    def workshop_screen(self, img):
+        """The Workshop (lobby > WORKSHOP): a bar of cards at the bottom, Scrappy then the stations, each
+        with its level as a roman numeral bottom right. Returns {"kind": "workshop", "levels": {...}}
+        or None when the bar isn't there."""
+        s = img.shape[0] / 1080
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        levels, read = {}, 0
+        for i, sid in enumerate(self.WORKSHOP_CARDS):
+            x = 580 + 114.1 * i
+            lv = self._roman(g[int((860 + 80) * s):int((860 + 98) * s), int((x + 70) * s):int((x + 102) * s)])
+            if lv:
+                read += 1
+                if sid:
+                    levels[sid] = lv
+        if read < 7:
+            return None
+        # and the lobby's top menu (PLAY  WORKSHOP  RAIDER ...) must be there: the cards are only shown
+        # under WORKSHOP, and nowhere else has seven numerals in those places
+        line = getattr(self.ocr, "line", None)
+        top = line(cv2.resize(img[int(10 * s):int(52 * s), int(80 * s):int(940 * s)], None, fx=1 / s, fy=1 / s)) if line else ""
+        if "workshop" not in _norm(top):
+            return None
+        return {"kind": "workshop", "levels": levels}
+
     # ---------- entry point ----------
     def scan(self, img, auto=False, progress=None):
         """Auto-detect what is on screen. Returns a JSON-able dict for the UI. auto: called by the
@@ -928,6 +983,9 @@ class Scanner:
         self._auto = auto
         h, w = img.shape[:2]
         small = img if w <= 1920 else cv2.resize(img, (1920, int(h * 1920 / w)), interpolation=cv2.INTER_AREA)
+        ws = self.workshop_screen(img)                          # cheap: fixed places, no text recognition
+        if ws:
+            return ws
         slots = self.find_slots(img)
         lines, fast = None, None
         if len(slots) >= 8:

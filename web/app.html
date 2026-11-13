@@ -855,6 +855,7 @@ window.onScanState=s=>{
 };
 window.onScanResult=r=>{
   if(!r){return}
+  if(r.kind==="workshop"){const a=S.auto;S.auto=true;autoScan(r);S.auto=a;return}
   if(r.error){S.scan={kind:"error",...r};S.tab="scan";render();toast("Nothing recognised");return}
   if(r.kind==="quests"){const prev={};(S.scan&&S.scan.kind==="quests"?S.scan.quests:[]).forEach(q=>prev[q.id]=q.use);r.quests.forEach(q=>q.use=prev[q.id]??q.score>=90)}
   S.scan=r;S.tab="scan";render();
@@ -876,6 +877,12 @@ function jsError(m){try{api()&&api().js_error&&api().js_error(String(m).slice(0,
 window.addEventListener("error",e=>jsError(`${e.message} @${e.lineno}:${e.colno}`));
 function autoScan(r){
   if(!r||!S.auto)return;
+  if(r.kind==="workshop"){
+    const ch=Object.entries(r.levels||{}).filter(([id,lv])=>D.hideout[id]&&(S.hide[id]||0)!==lv);
+    ch.forEach(([id,lv])=>S.hide[id]=lv);S.setup=S.setup||{};S.setup.workshop=Date.now();
+    if(ch.length){toast(`Workshop read: ${ch.map(([id,lv])=>`${D.hideout[id].n} ${lv}`).join(", ")}`);render()}else{autoBar("Workshop read: levels unchanged");save()}
+    return;
+  }
   if(r.kind==="quests"){
     if(r.level){S.level=r.level;S.levelAt=Date.now()}
     const id=r.screen,q=(r.quests||[]).find(x=>x.id===id);

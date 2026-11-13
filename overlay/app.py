@@ -288,7 +288,8 @@ class Watcher(threading.Thread):
     (rows already read come from a cache) and a quest at a trader (fixed places, ~0.5 s). Anything
     else is ignored without screen-wide text recognition."""
 
-    ROIS = {"stash": (100, 250, 720, 1080), "quest": (840, 100, 1880, 980)}   # 1080p: stash panel, quest panel
+    ROIS = {"stash": (100, 250, 720, 1080), "quest": (840, 100, 1880, 980),    # 1080p: stash panel, quest panel,
+            "workshop": (570, 850, 1500, 975)}                                   # workshop station cards
     NEW_VISIT = 30.0          # seconds without the stash after which it is read from scratch again
 
     def __init__(self, api: Api):
