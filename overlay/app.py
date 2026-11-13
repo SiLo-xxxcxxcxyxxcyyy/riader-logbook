@@ -63,6 +63,9 @@ class Api:
         self._scanner: Scanner | None = None
         self._lock = threading.Lock()
         self._visible = True
+        self._map_window: webview.Window | None = None
+        self._mon = None                                    # monitor rectangle, set in main()
+        self._map_url = None
 
     def _scn(self) -> Scanner:
         if self._scanner is None:
@@ -124,6 +127,40 @@ class Api:
         with self._lock:
             return self._scn().reassign(from_id, key, to_id)
 
+    def open_map(self, url):
+        """Show a map page (ARC Tracker's item spawn map) in a second always-on-top window, next to the
+        overlay. It's an ordinary visit of their page, like opening it in a browser. One window, reused."""
+        if not isinstance(url, str) or not url.startswith("https://arctracker.io/maps/"):
+            return False
+        w = self._map_window
+        if w is not None:
+            try:
+                if url != self._map_url:
+                    w.load_url(url)
+                w.show()
+                w.restore()
+                self._map_url = url
+                return True
+            except Exception:
+                self._map_window = None
+        mon = self._mon or {"left": 0, "top": 0, "width": 1920, "height": 1080}
+        width = min(1000, mon["width"] - 640)
+        height = min(900, mon["height"] - 120)
+        try:                                             # just left of the overlay
+            x = max(mon["left"], self._window.x - width - 10)
+        except Exception:
+            x = mon["left"] + 40
+        self._map_window = webview.create_window(
+            "Item map · ARC Tracker", url, width=width, height=height, x=x, y=mon["top"] + 40,
+            on_top=True, resizable=True, background_color="#12161B")
+        self._map_url = url
+
+        def closed():
+            self._map_window = None
+            self._map_url = None
+        self._map_window.events.closed += closed
+        return True
+
     def reset_vault_session(self):
         self._scn().reset_vault_session()
         return True
@@ -154,24 +191,41 @@ class Api:
 
     def _grab(self):
         was_visible = self._visible
-        if was_visible:               # keep the overlay out of the screenshot
+        mw = self._map_window
+        if was_visible:               # keep the overlay (and the map window) out of the screenshot
             self._window.hide()
+            if mw is not None:
+                self._safe(mw.hide)
             time.sleep(0.25)
         try:
             shot, info = capture.grab(self._monitor, bring_to_front=was_visible)
         finally:
             if was_visible:
                 self._window.show()
+                if mw is not None:
+                    self._safe(mw.show)
         return shot, info
 
     def _push(self, result):
         self._window.evaluate_js(f"window.onScanResult({json.dumps(result)})")
 
+    @staticmethod
+    def _safe(fn):
+        try:
+            fn()
+        except Exception:
+            pass
+
     def _toggle(self):
+        mw = self._map_window
         if self._visible:
             self._window.hide()
+            if mw is not None:
+                self._safe(mw.hide)
         else:
             self._window.show()
+            if mw is not None:
+                self._safe(mw.show)
         self._visible = not self._visible
 
 
@@ -257,6 +311,7 @@ def main(launch=None):
                   log=lambda m: logging.info("[first build] %s", m))
     with mss.mss() as sct:
         mon = sct.monitors[min(a.monitor, len(sct.monitors) - 1)]
+    api._mon = dict(mon)
     height = min(1000, mon["height"] - 80)
     # Open the page as file:// - the same address the data refresh reloads it with. Given a plain path,
     # pywebview serves it from http://127.0.0.1:42001 instead: a different origin with its own

@@ -70,3 +70,5 @@ github.com/SiLo-xxxcxxcxyxxcyyy/riader-logbook. Rebuild `dist/` after UI changes
   upgrade or repair takes it (`uses`: MetaForge relations via build.py `mf_relations`, plus
   sources/item_uses.json); common basic materials kept up to S.stockBasic (400), rest sold. Recycle when
   it yields something you're short of (deficit, or crafting material below S.stockMat=50), else sell.
+
+- ARC Tracker (arctracker.io) disallows /api/ in robots.txt: never fetch its map pins automatically. The Items dialog links to its item maps; in the desktop app they open in a second always-on-top pywebview window (Api.open_map, only https://arctracker.io/maps/ URLs), hidden with the overlay on F8 and during scans.
