@@ -292,8 +292,17 @@ class Watcher(threading.Thread):
         self.stream = capture.Stream(fps=4)
         self.prev, self.since, self.done = {}, {}, {}
         self.last_stash, self.last_scan = 0.0, 0.0
+        self._last_slots = []
 
-    def _show_marks(self, f, frame):
+    def _status(self, f, text, colour):
+        m = self.api._marks
+        if m:
+            k = f.shape[0] / 1080
+            ox, oy = self.stream.origin
+            m.show((int(ox), int(oy), f.shape[1], f.shape[0]), [], (text, colour, (int(150 * k), int(122 * k))))
+            self.marked = True
+
+    def _show_marks(self, f, frame, res=None):
         m = self.api._marks
         if not m or not frame:
             return
@@ -303,8 +312,22 @@ class Watcher(threading.Thread):
             v = vals.get(iid, 0) * n if iid else 0
             slots.append({"box": (x, y, w, h), "ok": iid is not None,
                           "label": marks.short_value(v) if v else None})
+        self._last_slots = slots
+        status = None
+        st = (res or {}).get("stash") or {}
+        if res is not None:
+            k = f.shape[0] / 1080
+            if res.get("gap"):
+                status = ("Rows were skipped: scroll back up a bit", "warn")
+            elif st.get("used") and st.get("slots", 0) >= st["used"]:
+                status = (f"All {st['used']} read" if st.get("slots") == st["used"] else
+                          f"Read {st['slots']} of {st['used']}: check it in the app", "ok" if st.get("slots") == st["used"] else "warn")
+            elif st.get("used"):
+                status = (f"{st['slots']} / {st['used']} read · scroll on", "busy")
+            if status:
+                status = (*status, (int(150 * k), int(122 * k)))
         ox, oy = self.stream.origin
-        m.show((int(ox), int(oy), f.shape[1], f.shape[0]), slots)
+        m.show((int(ox), int(oy), f.shape[1], f.shape[0]), slots, status)
         self.marked = True
 
     def _clear_marks(self):
@@ -349,6 +372,8 @@ class Watcher(threading.Thread):
             time.sleep(3.0)
             return
         if f is None:
+            if why != self.state:
+                logging.info("auto read: %s", why)
             self.state = why
             self._clear_marks()
             time.sleep(1.0)
@@ -376,6 +401,8 @@ class Watcher(threading.Thread):
         for name in self.ROIS:
             self.done[name] = self.prev.get(name)
         self.last_scan = now
+        if self.last_stash and now - self.last_stash < self.NEW_VISIT:
+            self._status(f, "Reading…", "busy")              # still at the stash: say it's working
         with self.api._lock:
             scn = self.api._scn()
             t0 = time.time()
@@ -390,7 +417,7 @@ class Watcher(threading.Thread):
         frame = res.pop("frame", None)
         if res.get("kind") == "vault":
             self.last_stash = time.time()
-            self._show_marks(f, frame)
+            self._show_marks(f, frame, res)
         else:
             self._clear_marks()
         res["auto"] = True

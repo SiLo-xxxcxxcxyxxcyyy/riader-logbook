@@ -85,12 +85,13 @@ class Marks:
             self._ready.wait(3.0)
 
     # ---- public ----
-    def show(self, rect, slots):
+    def show(self, rect, slots, status=None):
         """rect: (left, top, width, height) of the game picture on screen. slots: dicts with
-        "box" (x, y, w, h in that picture), "ok" (recognised?) and "label" (text under the slot)."""
+        "box" (x, y, w, h in that picture), "ok" (recognised?) and "label" (the value). status:
+        (text, colour name, (x, y) in the picture) for a pill above the stash, or None."""
         if not self.enabled or not self._hwnd:
             return
-        img = self._draw(rect[2], rect[3], slots)
+        img = self._draw(rect[2], rect[3], slots, status)
         with self._lock:
             self._pending = (rect, img)
         ctypes.windll.user32.PostMessageW(self._hwnd, WM_APP, 0, 0)
@@ -108,10 +109,17 @@ class Marks:
             self._fonts[size] = _font(size)
         return self._fonts[size]
 
-    def _draw(self, w, h, slots):
+    def _draw(self, w, h, slots, status=None):
         from PIL import Image, ImageDraw
         im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
+        if status:
+            text, colour, (sx, sy) = status
+            f = self._f(max(13, h // 60))
+            l, t, r, b = d.textbbox((sx, sy), text, font=f, anchor="lm")
+            bg = {"ok": (39, 174, 96), "warn": (211, 84, 0), "busy": (40, 44, 52)}.get(colour, (40, 44, 52))
+            d.rounded_rectangle((l - 10, t - 6, r + 10, b + 6), radius=(b - t) // 2 + 6, fill=bg + (235,))
+            d.text((sx, sy), text, font=f, fill=(255, 255, 255, 255), anchor="lm")
         for s in slots:
             x, y, bw, bh = s["box"]
             r = max(7, bw // 7)
@@ -171,6 +179,8 @@ class Marks:
                 return 0
             return user32.DefWindowProcW(hwnd, msg, wp, lp)
         self._proc = WNDPROC(proc)                                   # keep a reference
+        kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        user32.RegisterClassExW.argtypes = [ctypes.POINTER(WNDCLASSEXW)]
         hinst = kernel32.GetModuleHandleW(None)
         wc = WNDCLASSEXW()
         wc.cbSize = ctypes.sizeof(WNDCLASSEXW)

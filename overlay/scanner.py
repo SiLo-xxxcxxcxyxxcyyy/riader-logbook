@@ -80,6 +80,7 @@ class Scanner:
         num = np.load(os.path.join(assets, "numerals.npz")) if os.path.exists(os.path.join(assets, "numerals.npz")) else None
         self._numerals = [(str(l), im.astype(np.float32)) for l, im in zip(num["labels"], num["imgs"])] if num is not None else []
         self._ocr = None
+        self._auto = False
         self._cache_vecs, self._cache_vals = [], []
         self.reset_vault_session()
 
@@ -393,7 +394,12 @@ class Scanner:
                 f = 96.0 / crop.shape[0]
                 crop = cv2.resize(crop, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC)
                 self.ocr  # make sure the engines are loaded
-                res = self._ocr_digits(crop)
+                # recognition only first (fast); the full detector only when that reads no count
+                rec = getattr(self._ocr_digits, "rec", None)
+                res = [(None, t, c) for t, c in rec(crop)] if rec else []
+                if not any(re.fullmatch(r"[x×X]?\s*\d{1,4}\s*[x×X]?", r[1].strip().replace("O", "0").replace("o", "0")
+                                        .replace("l", "1").replace("I", "1")) for r in res):
+                    res = self._ocr_digits(crop)
                 for r in res or []:
                     text, conf = r[-2], float(r[-1])
                     t = text.strip().replace("O", "0").replace("o", "0").replace("l", "1").replace("I", "1")
@@ -417,6 +423,7 @@ class Scanner:
         self._cat = None           # category of the last page
         self._seq, self._pos = {}, {}   # category -> rows seen so far in stash order / where the last page was
         self._value = None         # stash value in creds, from the header
+        self._gap_now = False      # the last page didn't join up with what was read
         self._gaps = 0             # pages that didn't line up with anything seen (scrolled past rows)
 
     def fast_header(self, small, k):
@@ -525,9 +532,19 @@ class Scanner:
             if ov > 0:
                 cand = (ov, -abs(o - self._pos.get(self._cat, 0)), o)
                 best = cand if best is None or cand > best else best
-        o = best[2] if best else len(seq)                        # no overlap: below what we have (scrolled fast)
-        if best is None and seq:
+        if best is None and seq and not self._auto:
+            o = len(seq)                       # F9 a page at a time: pages follow each other without overlap
             self._gaps += 1
+        elif best is None and seq:
+            # automatic reading sees every settled view, so a page sharing no row with what was read means
+            # nothing on this page was read before: rows in between were skipped (scrolled too far).
+            # Counting it would leave a hole; wait for a page that joins up (scroll back up a bit).
+            self._gaps += 1
+            self._gap_now = True
+            return False
+        else:
+            o = best[2] if best else 0
+        self._gap_now = False
         new_idx = [i for i in range(len(rows)) if not 0 <= o + i < len(seq)]
         if not new_idx:                                          # the same rows again
             self._pos[self._cat] = o
@@ -602,7 +619,8 @@ class Scanner:
                 "slots": self._slots, "stash": self._cats.get(self._cat) and {"cat": self._cat, **self._cats[self._cat]},
                 "categories": cats,
                 # the all-items view plus a category in one session counts that category twice
-                "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "value": self._value}
+                "mixed": 0 in self._cats and len(self._cats) > 1, "gaps": self._gaps, "gap": self._gap_now,
+                "value": self._value}
 
     # ---------- quests ----------
     def scan_quests(self, lines):
@@ -664,6 +682,7 @@ class Scanner:
     def scan(self, img, auto=False):
         """Auto-detect what is on screen. Returns a JSON-able dict for the UI. auto: called by the
         background watcher, so screens that are neither the stash nor the quest log return None."""
+        self._auto = auto
         h, w = img.shape[:2]
         small = img if w <= 1920 else cv2.resize(img, (1920, int(h * 1920 / w)), interpolation=cv2.INTER_AREA)
         slots = self.find_slots(img)
@@ -758,7 +777,12 @@ def _ocr_engine(text_score=None):
             pad = cv2.copyMakeBorder(img, 6, 6, 12, 12, cv2.BORDER_REPLICATE)
             r = eng(pad, use_det=False, use_cls=False, use_rec=True)
             return " ".join(t for t in (getattr(r, "txts", None) or []) if t).strip()
-        run.line = line
+        def rec(img):
+            """Recognition only (no text detection) of a one-line crop: [(text, score)]."""
+            pad = cv2.copyMakeBorder(img, 8, 8, 24, 24, cv2.BORDER_REPLICATE)
+            r = eng(pad, use_det=False, use_cls=False, use_rec=True)
+            return [(t, float(sc)) for t, sc in zip(getattr(r, "txts", None) or [], getattr(r, "scores", None) or []) if t]
+        run.line, run.rec = line, rec
         return run
     except ImportError:
         from rapidocr_onnxruntime import RapidOCR

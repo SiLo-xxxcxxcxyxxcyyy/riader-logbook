@@ -234,7 +234,7 @@ class Stream:
             self.stop()
             return None, "game not running"
         hwnd = g[0]
-        if self.require_front and ctypes.windll.user32.GetForegroundWindow() != hwnd:
+        if self.require_front and not self._game_in_front(hwnd):
             self.stop()
             return None, "game in background"
         l, t, r, b = _client_rect(hwnd)
@@ -260,6 +260,22 @@ class Stream:
         th.join(2.0)
         f = out.get("f")
         return (np.ascontiguousarray(f), "ok") if f is not None else (None, "no frame")
+
+    def _game_in_front(self, game):
+        """The game is the foreground window, or one of our own windows is (the overlay, the in-game
+        marks: they sit on top of the game) and the last other window in front was the game."""
+        import ctypes
+        from ctypes import wintypes
+        fg = ctypes.windll.user32.GetForegroundWindow()
+        if fg == game:
+            self._last_other = game
+            return True
+        pid = wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(fg, ctypes.byref(pid))
+        if pid.value == os.getpid() or not fg:
+            return getattr(self, "_last_other", None) == game
+        self._last_other = fg
+        return False
 
     def stop(self):
         if self.cam is not None:
