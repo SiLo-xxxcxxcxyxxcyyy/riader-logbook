@@ -48,15 +48,14 @@ class Scanner:
     # ---------- helpers ----------
     @property
     def ocr(self):
+        """OCR function img -> [(box, text, score)]; lone digits use a lower score threshold."""
         if self._ocr is None:
-            from rapidocr_onnxruntime import RapidOCR
-            self._ocr = RapidOCR()
-            self._ocr_digits = RapidOCR(text_score=0.3)   # lone digits score low but are still right
+            self._ocr, self._ocr_digits = _ocr_engine(), _ocr_engine(text_score=0.3)
         return self._ocr
 
     def _read(self, img):
         """OCR -> list of (text, (cx, cy), box)."""
-        res, _ = self.ocr(img)
+        res = self.ocr(img)
         out = []
         for box, text, _conf in res or []:
             pts = np.array(box, dtype=float)
@@ -175,7 +174,7 @@ class Scanner:
                 f = 96.0 / crop.shape[0]
                 crop = cv2.resize(crop, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC)
                 self.ocr  # make sure the engines are loaded
-                res, _ = self._ocr_digits(crop)
+                res = self._ocr_digits(crop)
                 for r in res or []:
                     text, conf = r[-2], float(r[-1])
                     t = text.strip().replace("O", "0").replace("o", "0").replace("l", "1").replace("I", "1")
@@ -259,6 +258,38 @@ class Scanner:
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",
                 "debug": {"size": f"{w}x{h}", "text_lines": len(lines), "slots_found": len(slots),
                           "slot_size": int(np.median([s[2] for s in slots])) if slots else 0}}
+
+
+def _ocr_engine(text_score=None):
+    """RapidOCR wrapper for both package generations: `rapidocr` 3.x (Python 3.10-3.14) and the
+    older `rapidocr_onnxruntime` 1.x (Python <= 3.12)."""
+    try:
+        from rapidocr import RapidOCR
+        eng = RapidOCR(params={"Global.text_score": text_score, "Global.log_level": "warning"} if text_score
+                       else {"Global.log_level": "warning"})
+
+        def run(img):
+            r = eng(img)
+            if getattr(r, "boxes", None) is not None:
+                return [(b.tolist(), t, float(sc)) for b, t, sc in zip(r.boxes, r.txts, r.scores)]
+            if not text_score:
+                return []
+            # small corner crops (stack counts): the detector can miss a lone digit, so read the crop as one line
+            h, w = img.shape[:2]
+            pad = cv2.copyMakeBorder(img, 8, 8, 24, 24, cv2.BORDER_REPLICATE)
+            r = eng(pad, use_det=False, use_cls=False, use_rec=True)
+            txts = list(getattr(r, "txts", None) or [])
+            scores = list(getattr(r, "scores", None) or [])
+            return [([[0, 0], [w, 0], [w, h], [0, h]], t, float(sc)) for t, sc in zip(txts, scores) if t]
+        return run
+    except ImportError:
+        from rapidocr_onnxruntime import RapidOCR
+        eng = RapidOCR(text_score=text_score) if text_score else RapidOCR()
+
+        def run(img):
+            res, _ = eng(img)
+            return [(b, t, float(sc)) for b, t, sc in (res or [])]
+        return run
 
 
 def _largest_group(rects):

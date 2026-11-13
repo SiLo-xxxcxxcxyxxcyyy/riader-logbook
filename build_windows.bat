@@ -15,7 +15,7 @@ python build.py data\arcraiders-data || exit /b 1
 pyinstaller --noconfirm --windowed --noupx --name RaiderLogbook --version-file version_info.txt --distpath release ^
   --add-data "dist\index.html;ui" --add-data "overlay\assets;assets" ^
   --add-data "web\app.html;web" --add-data "sources;sources" --add-data "update;update" --paths . --hidden-import build ^
-  --collect-all rapidocr_onnxruntime --collect-all webview --collect-all pythonnet --collect-all clr_loader ^
+  --collect-all rapidocr --collect-all onnxruntime --collect-all webview --collect-all pythonnet --collect-all clr_loader ^
   overlay\overlay.py || exit /b 1
 echo.
 echo Done: release\RaiderLogbook\RaiderLogbook.exe
