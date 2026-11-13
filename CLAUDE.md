@@ -34,6 +34,12 @@ Czech; reply in Czech. UI text stays English.
 - Verified live on 2026-11-13: `method: dxgi`, correct stash frame, scanner finds the vault.
 - Still unexplained: the app crashed once while pressing F9 repeatedly in the stash (see `crash.log`).
 - Debug a scan: `python overlay/scanner.py <scan.png> --debug out.png`; then run `tests/test_real.py`.
+- Stash completeness: the scanner OCRs the "STASH 287/292" header (`Scanner.read_stash_header`) and
+  counts occupied slots per session (`_slots`, rows seen twice count once); the Scan tab shows a meter.
+- While a scan runs, `Api._state` calls `window.onScanState(stage)` → orange "Scanning…" bar on top.
+- ~377 items (mostly newer ones) have no icon in RaidTheory's set (refs.npz), so they come back as
+  "Not recognised". MetaForge preview icons were tried as extra references and match the in-game slots
+  poorly (similarity ~0.1), so unknowns are taught in the app (saved in `%APPDATA%\RaiderLogbook\learned`).
 
 ## Conventions
 Commit with "Raider Logbook <noreply@anthropic.com>" as author; push to `main` of

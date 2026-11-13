@@ -99,6 +99,14 @@ ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;g
 .sum b{font-family:var(--f-disp);font-size:22px;font-variant-numeric:tabular-nums}
 .toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);padding:8px 14px;border-radius:4px;font-weight:600;z-index:20}
 @media (prefers-reduced-motion:no-preference){.mapcard,.btn{transition:border-color .15s}}
+.scanbar{position:fixed;left:0;right:0;top:0;z-index:30;display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:14px}
+.scanbar[hidden]{display:none}
+.scanbar .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;flex:none}
+@media (prefers-reduced-motion:no-preference){.scanbar .spin{animation:spin .8s linear infinite}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.meter>i{display:block;height:100%;background:var(--accent)}
+.meter.full>i{background:var(--keep)}
 .grid2.big{grid-template-columns:minmax(0,1fr)}.grid2.big .mappanel{order:-1}
 .steps-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .steps-g figure{margin:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
@@ -147,6 +155,7 @@ body.desk .web-only{display:none}
 
 <dialog id="dlg"><div class="hd"><img class="big" id="dlgImg" alt="" onerror="this.hidden=true"><div style="flex:1;min-width:0"><div class="eyebrow" id="dlgSub"></div><h2 id="dlgTitle"></h2></div><button class="btn" id="dlgClose">Close</button></div><div class="bd" id="dlgBody"></div></dialog>
 <div class="toast" id="toast" hidden></div>
+<div class="scanbar" id="scanbar" role="status" aria-live="polite" hidden><span class="spin" aria-hidden="true"></span><span id="scanbarText">Scanning…</span></div>
 
 <script>
 const D=/*__DATA__*/null, MAPIMG=/*__MAPS__*/null;
@@ -441,6 +450,7 @@ V.scan=()=>{
   }else if(r&&r.kind==="vault"){
     const tot=r.items.reduce((a,x)=>a+x.count,0);
     res=`<div class="panel stack"><div class="eyebrow">Last scan · vault ${r.pages>1?`· ${plural(r.pages,"page")}`:""}</div><h2>${plural(r.items.length,"item type")} · ${tot} pieces</h2>
+    ${stashProgress(r)}
     <div class="tbl scanlist"><table><thead><tr><th>Item</th><th class="num">Count</th><th class="num">Match</th></tr></thead><tbody>
     ${r.items.map((x,i)=>`<tr><td>${itemBtn(x.id)}</td><td class="num"><input type="number" min="0" value="${x.count}" data-scancount="${i}" aria-label="Scanned count of ${esc(nm(x.id))}"></td><td class="num conf ${x.score<0.75?"low":""}">${Math.round(x.score*100)}%</td></tr>`).join("")}
     </tbody></table></div>
@@ -725,12 +735,29 @@ V.help=()=>{
 };
 
 /* ---------- scan results ---------- */
+// How much of the stash this scan session has covered: slots counted vs. the game's "STASH 287/292" header.
+function stashProgress(r){
+  const st=r.stash,n=r.slots||0;
+  if(r.slots===undefined)return "";   // older scanner code without slot counting
+  if(!st)return `<p class="note" style="margin:0">${plural(n,"slot")} scanned. The stash total wasn't readable, so the app can't tell whether it's complete: keep the STASH header visible while scanning.</p>`;
+  const pct=Math.min(100,Math.round(n/Math.max(1,st.used)*100)),done=n>=st.used;
+  const msg=n===st.used?`Whole stash scanned: all ${st.used} occupied slots.`
+    :n>st.used?`Counted ${n} slots but the stash holds ${st.used}: some rows were probably counted twice. Check the counts, or start a new vault scan and scroll a full page at a time.`
+    :`${n} of ${st.used} occupied slots scanned, ${st.used-n} to go. Scroll down and press <span class="kbd">F9</span> again.`;
+  return `<div class="stack" style="gap:6px"><div class="meter${done?" full":""}" role="progressbar" aria-valuemin="0" aria-valuemax="${st.used}" aria-valuenow="${Math.min(n,st.used)}" aria-label="Stash scanned"><i style="width:${pct}%"></i></div><p class="${n>st.used?"conf low":"mut"}" style="margin:0;font-size:13px">${msg}</p></div>`;
+}
+const SCAN_STAGE={capture:"Taking a screenshot of the game…",recognise:"Recognising items and text… this takes a few seconds"};
+window.onScanState=s=>{
+  const bar=$("#scanbar");if(!bar)return;
+  if(s==="busy"){if(!bar.hidden){$("#scanbarText").textContent="Still working on the previous scan, wait for it to finish…"}return}
+  bar.hidden=!s;if(s)$("#scanbarText").textContent=SCAN_STAGE[s]||"Scanning…";
+};
 window.onScanResult=r=>{
   if(!r){return}
   if(r.error){S.scan={kind:"error",...r};S.tab="scan";render();toast("Nothing recognised");return}
   if(r.kind==="quests"){const prev={};(S.scan&&S.scan.kind==="quests"?S.scan.quests:[]).forEach(q=>prev[q.id]=q.use);r.quests.forEach(q=>q.use=prev[q.id]??q.score>=90)}
   S.scan=r;S.tab="scan";render();
-  toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?`${plural(r.items.length,"item type")} recognised`:"Nothing recognised");
+  toast(r.kind==="quests"?`${plural(r.quests.length,"quest")} recognised`:r.kind==="vault"?(r.duplicate?"Same page as before: scroll the stash, then press F9":r.stash?(r.slots>=r.stash.used?`Done: ${r.slots}/${r.stash.used} stash slots scanned`:`${r.slots}/${r.stash.used} stash slots scanned`):`${plural(r.items.length,"item type")} recognised`):"Nothing recognised");
 };
 // Active quests you've confirmed by scanning are never marked done, nor anything after them.
 // That matters for quests with several possible previous quests.
@@ -797,7 +824,7 @@ document.addEventListener("click",e=>{
   else if(t.id==="bkExport"){$("#bk").value=JSON.stringify({inv:S.inv,done:S.done,hide:S.hide,proj:S.proj,useProj:S.useProj,future:S.future,pins:S.pins})}
   else if(t.id==="bkCopy"){const v=$("#bk").value;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("Copied"),()=>{$("#bk").select()})}
   else if(t.id==="bkImport"){try{Object.assign(S,JSON.parse($("#bk").value));render();toast("Backup restored")}catch(_){toast("That backup isn't valid JSON")}}
-  else if(t.id==="scanNow"&&api()){toast("Scanning…");api().scan_screen().then(window.onScanResult)}
+  else if(t.id==="scanNow"&&api()){api().scan_screen().then(window.onScanResult,()=>window.onScanState(null))}
   else if(t.id==="scanFile"&&api()){api().scan_file().then(window.onScanResult)}
   else if(t.id==="scanReset"&&api()){api().reset_vault_session().then(()=>toast("New vault scan started. Scan each vault page with F9."))}
   else if(t.id==="actAddBtn")addActive();

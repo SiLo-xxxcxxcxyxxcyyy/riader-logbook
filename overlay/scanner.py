@@ -232,6 +232,29 @@ class Scanner:
         self._pages, self._totals, self._unknown, self._last_rows = [], {}, 0, []
         self._unknowns, self._unknown_crops = {}, {}
         self._quests = {}
+        self._slots = 0            # occupied slots counted so far (rows seen twice are counted once)
+        self._stash = None         # {"used": 287, "cap": 292} read from the "STASH 287/292" header
+
+    @staticmethod
+    def read_stash_header(lines, k=1.0):
+        """The stash header shows used/capacity slots ("STASH" with "287/292" under it). Returns
+        {"used", "cap"} or None. Other x/y counters on screen (backpack 0/10, quick use 0/4) are
+        ignored by taking the one closest below the STASH label."""
+        label = next((c for t, c, _ in lines if _norm(t) == "stash"), None)
+        if label is None:
+            return None
+        best = None
+        for t, (cx, cy), _ in lines:
+            m = re.fullmatch(r"\D{0,3}(\d{1,4})\s*[/l|]\s*(\d{2,4})", t.strip())
+            if not m:
+                continue
+            used, cap = int(m.group(1)), int(m.group(2))
+            dy, dx = cy - label[1], abs(cx - label[0])
+            if not (0 < dy < 90 * k and dx < 200 * k and used <= cap):
+                continue
+            if best is None or dy + dx < best[0]:
+                best = (dy + dx, {"used": used, "cap": cap})
+        return best and best[1]
 
     @staticmethod
     def _rows(slots):
@@ -256,7 +279,9 @@ class Scanner:
                 break
         self._pages.append(sig)
         self._last_rows = ids
-        for s in [s for r in rows[skip:] for s in r]:
+        new = [s for r in rows[skip:] for s in r]
+        self._slots += len(new)
+        for s in new:
             if s.get("unknown"):
                 key = s["id"][1:]
                 u = self._unknowns.setdefault(key, {"key": key, "count": 0, "img": _thumb(s["crop"])})
@@ -272,7 +297,8 @@ class Scanner:
     def _vault_result(self):
         items = sorted(self._totals.values(), key=lambda x: self.items.get(x["id"], {}).get("n", x["id"]))
         unk = list(self._unknowns.values())
-        return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": len(unk), "unknowns": unk}
+        return {"kind": "vault", "items": items, "pages": len(self._pages), "unknown": len(unk), "unknowns": unk,
+                "slots": self._slots, "stash": self._stash}
 
     # ---------- quests ----------
     def scan_quests(self, lines):
@@ -305,6 +331,7 @@ class Scanner:
             return {"kind": "quests", "quests": sorted(self._quests.values(), key=lambda q: -q["score"]), "added": new}
         page = self.scan_vault(img)
         if page:
+            self._stash = self.read_stash_header(lines, small.shape[0] / 1080) or self._stash
             added = self._add_vault_page(page)
             return {**self._vault_result(), "duplicate": not added}
         return {"error": "Nothing recognised. Open the quest log or a vault page and try again.",

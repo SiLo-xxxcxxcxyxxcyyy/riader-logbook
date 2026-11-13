@@ -72,10 +72,22 @@ class Api:
     # ---- called from the UI (window.pywebview.api.*) ----
     def scan_screen(self):
         with self._lock:
-            img, info = self._grab()
-            res = self._safe_scan(img)
+            self._state("capture")
+            try:
+                img, info = self._grab()
+                self._state("recognise")
+                res = self._safe_scan(img)
+            finally:
+                self._state(None)
             res["capture"] = info
             return res
+
+    def _state(self, stage):
+        """Tell the page what the scanner is doing, so it can show a 'scanning…' bar."""
+        try:
+            self._window.evaluate_js(f"window.onScanState&&window.onScanState({json.dumps(stage)})")
+        except Exception:
+            pass
 
     def scan_file(self):
         paths = self._window.create_file_dialog(
@@ -188,13 +200,14 @@ def start_hotkeys(api: Api):
             try:
                 logging.info("scan: start")
                 res = api.scan_screen()
-                logging.info("scan: %s", {k: (v if k != "items" and k != "quests" else len(v)) for k, v in res.items()
-                                          if k not in ("debug",)})
+                logging.info("scan: %s", {k: (v if k not in ("items", "quests", "unknowns") else len(v))
+                                          for k, v in res.items() if k not in ("debug",)})
                 api._push(res)
             except Exception:
                 logging.exception("scan crashed")
         if api._lock.locked():
             logging.info("scan: ignored, previous scan still running")
+            api._state("busy")
             return
         threading.Thread(target=run, daemon=True).start()
 
